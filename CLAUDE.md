@@ -59,11 +59,6 @@ main without a tag do not deploy.
 - Module loggers are named `log`, never `logger`: `log = logging.getLogger(__name__)`
 - Cross-repo work is allowed: sibling gtfs.zone repos live under the same parent
   directory and may be read and edited when a change spans repos.
-- The Stadia styles used here (the `stamen_*` and `alidade_*` raster tiles)
-  need neither an API key nor registering the domain with Stadia; never add a
-  key or suggest registering. edit.gtfs.zone uses them unregistered. curl
-  returns 401 for them even with a gtfs.zone Referer, so it is not a valid
-  test; check a basemap problem in a browser on the page itself.
 
 ## Related Repos
 
