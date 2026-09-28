@@ -145,6 +145,7 @@ def test_site_json():
         "slug": "test",
         "title": "Test & Co",
         "routes": 1,
+        "brand_color": None,
         "valid_through": summary["valid_through"],
         "generated": "2026-10-05",
     }
@@ -153,7 +154,13 @@ def test_site_json():
 def test_build_root():
     summaries = [
         {"slug": "b", "title": "bravo", "routes": 1, "valid_through": None},
-        {"slug": "a", "title": "Alpha", "routes": 2, "valid_through": "2026-12-01"},
+        {
+            "slug": "a",
+            "title": "Alpha",
+            "routes": 2,
+            "brand_color": "80276C",
+            "valid_through": "2026-12-01",
+        },
     ]
     files = {k: v.decode() for k, v in build_root(summaries, MONDAY).items()}
     assert set(files) == {
@@ -167,6 +174,7 @@ def test_build_root():
     home = files["index.html"]
     assert home.index('href="a/"') < home.index('href="b/"')
     assert "2 routes, valid through December 1, 2026" in home
+    assert home.count('style="background:#80276C"') == 1
     assert re.search(r"\.gtfs\.zone<sup[^>]*>v\d+\.\d+\.\d+</sup>", home)
     assert 'href="https://gtfs.zone" target="_blank"' in home
     assert 'cape-flier" target="_blank" rel="noopener">cape-flier</a>' in home

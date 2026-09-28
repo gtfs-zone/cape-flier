@@ -135,6 +135,7 @@ def build_site(
         slug=site.slug,
         title=common["site_title"],
         routes=len(routes),
+        brand_color=site.brand_color and site.brand_color.upper(),
         valid_through=through.isoformat() if through else None,
         generated=today.isoformat(),
     )
@@ -159,7 +160,11 @@ def build_root(summaries: list[dict], today: date) -> dict[str, bytes]:
     error page. `summaries` are the sites' site.json contents. No I/O."""
     sites = sorted(
         (
-            summary | {"valid_through": through and date.fromisoformat(through)}
+            summary
+            | {
+                "brand_color": summary.get("brand_color"),
+                "valid_through": through and date.fromisoformat(through),
+            }
             for summary in summaries
             for through in [summary.get("valid_through")]
         ),

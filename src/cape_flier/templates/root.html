@@ -11,10 +11,13 @@
 <h1 class="text-3xl font-bold">Transit timetables</h1>
 <ul class="list rounded-box bg-base-100 shadow-sm">
 {% for site in sites %}
-<li><a class="flex min-h-14 flex-wrap items-center gap-x-4 gap-y-1 rounded-box px-4 py-3 hover:bg-base-200 focus-visible:bg-base-200" href="{{ site.slug }}/">
-<span class="min-w-0 flex-1 font-semibold">{{ site.title }}</span>
-<span class="basis-full text-sm text-base-content/70">{{ site.routes }} route{{ "s" if site.routes != 1 }}
+<li><a class="flex min-h-14 items-center gap-4 rounded-box px-4 py-3 hover:bg-base-200 focus-visible:bg-base-200" href="{{ site.slug }}/">
+<span class="size-4 shrink-0 rounded-full bg-primary ring-1 ring-base-content/20"{% if site.brand_color %} style="background:#{{ site.brand_color }}"{% endif %} aria-hidden="true"></span>
+<span class="flex min-w-0 flex-1 flex-col gap-1">
+<span class="font-semibold">{{ site.title }}</span>
+<span class="text-sm text-base-content/70">{{ site.routes }} route{{ "s" if site.routes != 1 }}
 {%- if site.valid_through %}, valid through {{ site.valid_through.strftime("%B") }} {{ site.valid_through.day }}, {{ site.valid_through.year }}{% endif %}</span>
+</span>
 </a></li>
 {% endfor %}
 </ul>
