@@ -1,3 +1,13 @@
+## v0.3.0 (2026-09-28)
+
+### Feat
+
+- **timetable**: branching rail strip and one-cell dwell times
+
+### Fix
+
+- **pipeline**: serve svg as image/svg+xml, rebuild every site on a new version
+
 ## v0.2.0 (2026-09-28)
 
 ### Feat

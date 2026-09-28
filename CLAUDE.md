@@ -59,6 +59,11 @@ main without a tag do not deploy.
 - Module loggers are named `log`, never `logger`: `log = logging.getLogger(__name__)`
 - Cross-repo work is allowed: sibling gtfs.zone repos live under the same parent
   directory and may be read and edited when a change spans repos.
+- Stadia basemaps need no API key; never add one. Stadia authenticates by the
+  page's domain: `localhost` and private IPs (the LAN dev server) always work,
+  and a public domain works once it is added in the Stadia client dashboard.
+  Tiles returning 401 (a placeholder image) on a public host means that host is
+  not registered there, not that the style needs a key.
 
 ## Related Repos
 
