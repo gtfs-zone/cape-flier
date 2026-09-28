@@ -6,7 +6,8 @@ import pytest
 from conftest import fixture_files, fixture_zip, make_zip
 
 from cape_flier.build import build_root, build_site, page_digest
-from cape_flier.config import Site
+from cape_flier.catalog import shard_of
+from cape_flier.config import CatalogFeed, Site
 
 MONDAY = date(2026, 10, 5)
 
@@ -152,43 +153,101 @@ def test_site_json():
         "brand_color": None,
         "valid_through": summary["valid_through"],
         "generated": "2026-10-05",
+        "country_code": None,
+        "country": None,
+        "subdivision": None,
     }
 
 
+def test_site_json_country_from_catalog():
+    feed = CatalogFeed(
+        feedId="f-0123456789",
+        name="Test",
+        country="United States",
+        country_code="US",
+        subdivision="Oregon",
+    )
+    site = Site(slug="test", feed=feed.feed_id, catalog=feed)
+    summary = json.loads(
+        build_site(fixture_zip("branching"), site, MONDAY)["site.json"]
+    )
+    assert summary["country_code"] == "US"
+    assert summary["country"] == "United States"
+    assert summary["subdivision"] == "Oregon"
+
+
 def test_build_root():
+    us = {"country_code": "US", "country": "United States"}
     summaries = [
-        {"slug": "b", "title": "bravo", "routes": 1, "valid_through": None},
+        {"slug": "b", "title": "bravo", "routes": 1, "valid_through": None}
+        | us
+        | {"subdivision": "Oregon"},
         {
             "slug": "a",
             "title": "Alpha",
             "routes": 2,
             "brand_color": "80276C",
             "valid_through": "2026-12-01",
-        },
+            "subdivision": "Maine",
+        }
+        | us,
+        {"slug": "c", "title": "Charlie", "routes": 3},
+        {"slug": "d", "title": "Delta", "routes": 1, "country_code": "CA"},
     ]
     pages = {"a": {"index.html": "2026-09-01", "r/index.html": "2026-10-05"}}
     files = {
         k: v.decode() for k, v in build_root(summaries, MONDAY, pages, "k3y").items()
     }
+    shard = f"sitemaps/{shard_of('a'):02d}.xml"
     assert set(files) == {
         "index.html",
+        "countries/us/index.html",
+        "countries/ca/index.html",
+        "countries/other/index.html",
         "error.html",
         "style.css",
         "logo.svg",
         "sitemap.xml",
+        "sitemaps/root.xml",
+        shard,
         "robots.txt",
         "k3y.txt",
     }
     home = files["index.html"]
-    assert home.index('href="a/"') < home.index('href="b/"')
-    assert "2 routes, valid through December 1, 2026" in home
-    assert home.count('style="background:#80276C"') == 1
+    # By name, Other last.
+    assert (
+        home.index('href="countries/ca/"')
+        < home.index('href="countries/us/"')
+        < home.index('href="countries/other/"')
+    )
+    assert "United States</span>" in home and "2 agencies" in home
     assert re.search(r"\.gtfs\.zone<sup[^>]*>v\d+\.\d+\.\d+</sup>", home)
     assert 'href="https://gtfs.zone" target="_blank"' in home
     assert 'cape-flier" target="_blank" rel="noopener">cape-flier</a>' in home
-    assert '<link rel="stylesheet" href="/style.css">' in files["error.html"]
-    sitemap = files["sitemap.xml"]
-    assert "<url><loc>https://sites.gtfs.zone/</loc></url>" in sitemap
+    assert '"@type": "WebSite"' in home
+
+    country = files["countries/us/index.html"]
+    assert country.index(">Maine</h2>") < country.index(">Oregon</h2>")
+    assert country.index('href="../../a/"') < country.index('href="../../b/"')
+    assert "2 routes, to Dec 1" in country
+    assert country.count('style="background:#80276C"') == 1
+    assert '<link rel="stylesheet" href="../../style.css">' in country
+    assert (
+        '<link rel="canonical" href="https://sites.gtfs.zone/countries/us/">' in country
+    )
+    assert "<h2" not in files["countries/other/index.html"]
+
+    index = files["sitemap.xml"]
+    assert "<sitemapindex" in index
+    assert "<loc>https://sites.gtfs.zone/sitemaps/root.xml</loc></sitemap>" in index
+    assert (
+        f"<loc>https://sites.gtfs.zone/{shard}</loc><lastmod>2026-10-05</lastmod>"
+        in index
+    )
+    root_map = files["sitemaps/root.xml"]
+    assert "<url><loc>https://sites.gtfs.zone/</loc></url>" in root_map
+    assert "<loc>https://sites.gtfs.zone/countries/us/</loc>" in root_map
+    sitemap = files[shard]
     assert (
         "<loc>https://sites.gtfs.zone/a/</loc><lastmod>2026-09-01</lastmod>" in sitemap
     )
@@ -197,8 +256,8 @@ def test_build_root():
         in sitemap
     )
     assert files["k3y.txt"] == "k3y"
+    assert '<link rel="stylesheet" href="/style.css">' in files["error.html"]
     assert '<meta name="robots" content="noindex">' in files["error.html"]
-    assert '"@type": "WebSite"' in home
     assert "Sitemap: https://sites.gtfs.zone/sitemap.xml" in files["robots.txt"]
     assert summaries[1]["valid_through"] == "2026-12-01"
 

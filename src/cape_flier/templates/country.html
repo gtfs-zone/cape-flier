@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}{{ country.name }} transit timetables - sites.gtfs.zone{% endblock %}
+{% block description %}Bus and train timetables for {{ country.sites | length }} transit agenc{{ "ies" if country.sites | length != 1 else "y" }} in {{ country.name }}, generated from their GTFS feeds.{% endblock %}
+{% block brand %}
+<a class="btn btn-ghost h-auto min-h-11 gap-3 py-2" href="{{ root }}">
+<img class="w-8 rounded-lg" src="{{ root }}logo.svg" alt="">
+<span class="text-xl font-bold"><span class="text-primary">sites</span>.gtfs.zone</span>
+</a>
+{% endblock %}
+{% block main %}
+<h1 class="text-3xl font-bold">{{ country.name }}</h1>
+{% for subdivision, sites in country.subdivisions %}
+{% if country.subdivisions | length > 1 %}
+<h2 class="text-xl font-semibold">{{ subdivision or "Elsewhere" }}</h2>
+{% endif %}
+<ul class="list rounded-box bg-base-100 shadow-sm">
+{% for site in sites %}
+<li><a class="flex min-h-11 items-center gap-3 rounded-box px-4 py-2 hover:bg-base-200" href="{{ root }}{{ site.slug }}/">
+<span class="size-3 shrink-0 rounded-full bg-primary"{% if site.brand_color %} style="background:#{{ site.brand_color }}"{% endif %}></span>
+<span class="flex-1">{{ site.title }}</span>
+<span class="text-sm opacity-70">{{ site.routes }} route{{ "s" if site.routes != 1 }}
+{%- if site.valid_through %}, to {{ site.valid_through.strftime("%b") }} {{ site.valid_through.day }}{% endif %}</span>
+</a></li>
+{% endfor %}
+</ul>
+{% endfor %}
+{% endblock %}
+{% block footer %}
+<p>Generated daily from each agency's GTFS feed by <a class="link" href="https://github.com/gtfs-zone/cape-flier" target="_blank" rel="noopener">cape-flier</a>. Check with the agency before you travel.</p>
+<p><a class="link" href="{{ root }}">All countries</a></p>
+{% endblock %}

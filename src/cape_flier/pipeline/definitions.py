@@ -1,11 +1,13 @@
-"""Dagster entrypoint: one partition per site in sites.yaml, rebuilt daily and
-once more whenever a new cape-flier version is deployed.
+"""Dagster entrypoint: the sites split into SHARDS partitions by slug, each
+rebuilt daily and once more whenever a new cape-flier version is deployed.
 
-Each run builds one site and then rewrites the bucket root, so the root index
-is current after every run. The Gatus heartbeat is pushed only once every
-configured site has been built today.
+Each run resolves every site from sites.yaml and feeds.json, builds its shard's
+sites in worker processes and then rewrites the bucket root from every shard's
+file, so the root is current after every run. The Gatus heartbeat is pushed
+once nearly every site has been built today.
 """
 
+import functools
 import os
 from datetime import date
 from importlib.metadata import version
@@ -29,89 +31,96 @@ from dagster import (
     sensor,
 )
 
-from cape_flier.build import BASE_URL, build_site
+from cape_flier.build import BASE_URL
+from cape_flier.catalog import SHARDS, resolve_sites, shard_of
 from cape_flier.config import FEEDS_URL, USER_AGENT, load_config
 from cape_flier.pipeline import indexnow
 from cape_flier.pipeline.bucket import Bucket, BucketSettings
 from cape_flier.pipeline.heartbeat import push_heartbeat
 from cape_flier.pipeline.publish import (
-    download,
+    SLUGS,
     publish_root,
-    publish_site,
-    read_manifest,
+    put_json,
+    read_entries,
+    read_json,
+    run_shard,
 )
+from cape_flier.pipeline.worker import publish_one
 
 CONFIG = load_config(
     Path(os.environ.get("CAPE_FLIER_CONFIG", "sites.yaml")).read_text()
 )
-SLUGS = [site.slug for site in CONFIG.sites]
 VERSION = version("cape-flier")
+WORKERS = int(os.environ.get("CAPE_FLIER_WORKERS", "4"))
+# Address space per worker; a feed that needs more fails alone.
+WORKER_MEMORY = int(os.environ.get("CAPE_FLIER_WORKER_MEMORY", "2500000000"))
+# The share of sites that may be behind today while still pushing the heartbeat.
+BEHIND_RATIO = 0.05
 
-site_partitions = StaticPartitionsDefinition(SLUGS)
+KEYS = [f"{shard:02d}" for shard in range(SHARDS)]
+shard_partitions = StaticPartitionsDefinition(KEYS)
 
 
-@asset(partitions_def=site_partitions)
+@asset(partitions_def=shard_partitions)
 def site_pages(context: AssetExecutionContext) -> MaterializeResult:
-    """Download the site's feed, build it and publish the changed files."""
-    site = CONFIG.site(context.partition_key)
+    """Build and publish the shard's sites, then rewrite the root."""
+    shard = int(context.partition_key)
     today = date.today()
     bucket = Bucket(BucketSettings.from_env())
-    previous = read_manifest(bucket, site.slug)
-    # Builds depend on the date and the code, so only a second run on the same
-    # day with the same version may skip.
-    same_day = (
-        previous
-        and previous.get("built") == today.isoformat()
-        and previous.get("version") == VERSION
-    )
     with httpx.Client(
         headers={"User-Agent": USER_AGENT}, timeout=120.0, follow_redirects=True
     ) as http:
-        feeds_doc = http.get(FEEDS_URL).raise_for_status().json() if site.feed else {}
-        url = site.download_url(feeds_doc)
-        body, source = download(http, url, previous["source"] if same_day else None)
+        feeds_doc = http.get(FEEDS_URL).raise_for_status().json()
+        pinned = read_json(bucket, SLUGS) or {}
+        sites, slugs = resolve_sites(CONFIG, feeds_doc, pinned)
+        if slugs != pinned:
+            put_json(bucket, SLUGS, slugs)
+        mine = [site for site in sites if shard_of(site.slug) == shard]
+        context.log.info("shard %02d: %d of %d sites", shard, len(mine), len(sites))
 
-        changed: list[str] = []
-        if body is None:
-            context.log.info("feed unchanged since today's build, not rebuilding")
-            counts = {"files": len(previous["files"]), "uploaded": 0, "deleted": 0}
-        else:
-            files = build_site(body, site, today)
-            counts, changed = publish_site(
-                bucket, site.slug, files, source, today, VERSION
-            )
-        context.log.info("%s: %s", site.slug, counts)
+        publish = functools.partial(publish_one, today=today, version=VERSION)
+        results, failures = run_shard(
+            bucket, shard, mine, publish, WORKERS, WORKER_MEMORY
+        )
+        for slug, error in sorted(failures.items()):
+            context.log.warning("%s: %s", slug, error)
 
         # After the root, which serves the IndexNow key file.
-        behind = publish_root(bucket, SLUGS, today, indexnow.KEY)
+        live = {site.slug for site in sites}
+        behind = publish_root(bucket, read_entries(bucket), live, today, indexnow.KEY)
         indexnow.ping(
             http,
             [
-                f"{BASE_URL}/{site.slug}/{path.removesuffix('index.html')}"
-                for path in changed
+                f"{BASE_URL}/{slug}/{path.removesuffix('index.html')}"
+                for slug, result in sorted(results.items())
+                for path in result["changed"]
             ],
         )
-    if behind:
-        context.log.info("not built today yet: %s", ", ".join(behind))
-    else:
+    context.log.info("%d of %d sites not built today", len(behind), len(live))
+    if len(behind) <= BEHIND_RATIO * len(live):
         push_heartbeat()
 
+    uploaded = sum(result["counts"]["uploaded"] for result in results.values())
     return MaterializeResult(
         metadata={
-            **counts,
-            "feed_url": MetadataValue.url(url),
-            "site": MetadataValue.url(f"{BASE_URL}/{site.slug}/"),
+            "sites": len(mine),
+            "built": len(results),
+            "failed": len(failures),
+            "uploaded": uploaded,
+            "behind": len(behind),
+            "failures": MetadataValue.json(failures),
+            "root": MetadataValue.url(f"{BASE_URL}/"),
         }
     )
 
 
 sites_job = define_asset_job(
-    "sites", selection=[site_pages], partitions_def=site_partitions
+    "sites", selection=[site_pages], partitions_def=shard_partitions
 )
 
 
 # Two hours after geometry-car's 09:00 UTC catalog run, which shares the run
-# queue and publishes the feeds.json this resolves feed ids from.
+# queue and publishes the feeds.json sites are resolved from.
 @schedule(
     job=sites_job,
     cron_schedule="0 11 * * *",
@@ -120,15 +129,15 @@ sites_job = define_asset_job(
 )
 def daily_sites(context: ScheduleEvaluationContext) -> list[RunRequest]:
     day = context.scheduled_execution_time.date().isoformat()
-    return [RunRequest(run_key=f"{slug}-{day}", partition_key=slug) for slug in SLUGS]
+    return [RunRequest(run_key=f"{key}-{day}", partition_key=key) for key in KEYS]
 
 
-# Rebuilds every site once per deployed version, and builds sites newly added
-# to sites.yaml; Dagster skips run keys this sensor has already requested.
+# Rebuilds every shard once per deployed version; Dagster skips run keys this
+# sensor has already requested.
 @sensor(job=sites_job, default_status=DefaultSensorStatus.RUNNING)
 def new_version(context: SensorEvaluationContext) -> list[RunRequest]:
     return [
-        RunRequest(run_key=f"{slug}-v{VERSION}", partition_key=slug) for slug in SLUGS
+        RunRequest(run_key=f"shard-{key}-v{VERSION}", partition_key=key) for key in KEYS
     ]
 
 

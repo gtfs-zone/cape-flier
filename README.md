@@ -1,8 +1,8 @@
 # Cape Flier
 
 Static timetable websites generated from GTFS, served at
-[sites.gtfs.zone](https://sites.gtfs.zone). One site per agency in
-`sites.yaml`: an index of routes, printed-style timetables per route, direction
+[sites.gtfs.zone](https://sites.gtfs.zone). One site per agency, listed in
+`sites.yaml` or taken from the gtfs.zone feed catalog: an index of routes, printed-style timetables per route, direction
 and service day, and a simple route map. Plain HTML and CSS, no JavaScript
 needed to read a timetable.
 
@@ -10,10 +10,12 @@ needed to read a timetable.
 
 ```bash
 uv sync
-uv run cape-flier dev                                   # build every site and the home page, serve, rebuild on changes
+uv run cape-flier dev                                   # build the listed sites and the home page, serve, rebuild on changes
 uv run cape-flier dev --site columbia-county            # the same, one site only (faster rebuilds)
 uv run cape-flier dev --refresh                         # download the feeds again instead of using .cache/feeds/
 uv run cape-flier build                                 # clear dist/, build every site and the home page
+uv run cape-flier build --listed                        # only the sites listed in sites.yaml, not the catalog's
+uv run cape-flier build --country US --limit 50 --workers 4 --cache .cache/feeds   # a sample of catalog sites
 uv run cape-flier build --site columbia-county         # rebuild dist/columbia-county/ and the home page
 uv run cape-flier build --site columbia-county --zip feed.zip   # use a local zip
 uv run cape-flier serve                                 # serve dist/ on the LAN, port 8000
@@ -22,11 +24,23 @@ uv run cape-flier sizes                                 # largest built pages, g
 
 `build` resolves a site's `feed:` id to its download URL through
 `data.gtfs.zone/feeds.json` at build time, or uses the site's `url:` directly.
+With `--cache`, feeds.json and the slugs assigned to catalog feeds are kept
+there too.
 
 ## Configuration
 
-`sites.yaml` holds `defaults` and a list of `sites`. Each site needs a `slug`
-and exactly one of `feed` or `url`, and may override any default:
+`sites.yaml` holds `defaults`, an optional `catalog` filter and a list of
+`sites`.
+
+`catalog` makes a site of every feed in `data.gtfs.zone/feeds.json` whose
+schedule is up and that passes `countries` (ISO codes, empty for all),
+`max_bytes` (zip size) and `exclude` (feed ids). Its slug comes from the feed
+name and is pinned in the bucket's `slugs.json`, so it never changes or goes to
+another feed.
+
+Each listed site needs exactly one of `feed` or `url`, a `slug` when it has a
+`url` (optional for a `feed`), and may override any default. A listed `feed` is
+built whatever the catalog filter says:
 
 | Option | Values | Default |
 |---|---|---|
@@ -54,12 +68,17 @@ site and does no I/O, so it can run anywhere Python does.
 
 ## Pipeline
 
-`cape_flier.pipeline.definitions` is a Dagster code location with one partition
-per site. A daily schedule at 11:00 UTC runs every site: download the feed,
+`cape_flier.pipeline.definitions` is a Dagster code location with 16
+partitions, each a shard of the sites by slug. A daily schedule at 11:00 UTC
+runs every shard. A run resolves the sites from `sites.yaml` and feeds.json,
+then for each of its shard's sites, in worker processes: download the feed,
 build it, upload the files whose hash changed to the `sites.gtfs.zone` bucket,
-delete ones no longer built, write `<slug>/manifest.json`, then rewrite the
-bucket root (index, sitemap index, `robots.txt`, `error.html`). A Gatus
-heartbeat is pushed once every site has been built that day.
+delete ones no longer built and write `<slug>/manifest.json`. A site that fails
+keeps its previous pages. The run then writes `_shards/<nn>.json` and rewrites
+the bucket root from every shard file (country index, a page per country, a
+sitemap index over one sitemap per shard, `robots.txt`, `error.html`), deleting
+sites no longer resolved unless the site count fell by more than 20%. A Gatus
+heartbeat is pushed once 95% of sites have been built that day.
 
 ```bash
 uv sync --extra pipeline
@@ -68,7 +87,9 @@ S3_ENDPOINT=... S3_ACCESS_KEY=... S3_SECRET_KEY=... uv run dagster dev -m cape_f
 
 Environment: `S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_BUCKET`
 (default `sites.gtfs.zone`), `S3_REGION` (default `garage`), `GATUS_URL`,
-`GATUS_TOKEN`, `CAPE_FLIER_CONFIG` (default `sites.yaml`).
+`GATUS_TOKEN`, `CAPE_FLIER_CONFIG` (default `sites.yaml`), `CAPE_FLIER_WORKERS`
+(default 4), `CAPE_FLIER_WORKER_MEMORY` (address space per worker in bytes,
+default 2500000000).
 
 ## License
 

@@ -18,7 +18,9 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from cape_flier.build import build_root, build_site, site_feed, site_timetables
+from cape_flier.catalog import resolve_sites
 from cape_flier.config import FEEDS_URL, USER_AGENT, Site, load_config
+from cape_flier.pool import run_all
 from cape_flier.timetable import to_text
 
 log = logging.getLogger(__name__)
@@ -30,6 +32,48 @@ def fetch(url: str) -> bytes:
         return response.read()
 
 
+# feeds.json and the {feed id: slug} map, kept in the feed cache.
+CATALOG = "_catalog.json"
+SLUG_MAP = "_slugs.json"
+
+
+def load_sites(
+    config_path: Path, cache: Path | None, catalog: bool = True
+) -> list[Site]:
+    """Every site the config resolves to, or only its `sites:` entries without
+    `catalog`. feeds.json is fetched only when a site needs it, and kept in
+    `cache` with the slugs assigned from it."""
+    config = load_config(config_path.read_text())
+    if not catalog:
+        config = config.model_copy(update={"catalog": None})
+    feeds_doc: dict = {}
+    if config.catalog is not None or any(entry.feed for entry in config.sites):
+        cached = cache / CATALOG if cache else None
+        if cached and cached.exists():
+            feeds_doc = json.loads(cached.read_bytes())
+        else:
+            log.info("downloading %s", FEEDS_URL)
+            body = fetch(FEEDS_URL)
+            feeds_doc = json.loads(body)
+            if cached:
+                cached.parent.mkdir(parents=True, exist_ok=True)
+                cached.write_bytes(body)
+    slug_map = cache / SLUG_MAP if cache else None
+    pinned = json.loads(slug_map.read_text()) if slug_map and slug_map.exists() else {}
+    sites, slugs = resolve_sites(config, feeds_doc, pinned)
+    if slug_map and slugs != pinned:
+        slug_map.parent.mkdir(parents=True, exist_ok=True)
+        slug_map.write_text(json.dumps(slugs, indent=2, sort_keys=True))
+    return sites
+
+
+def find_site(sites: list[Site], slug: str) -> Site:
+    for site in sites:
+        if site.slug == slug:
+            return site
+    raise SystemExit(f"no site {slug!r}")
+
+
 def feed_zip(site: Site, zip_path: Path | None, cache: Path | None = None) -> bytes:
     """The local zip when given, else the cached download in `cache`, else a
     download of the site's feed (saved to `cache` when given)."""
@@ -38,8 +82,7 @@ def feed_zip(site: Site, zip_path: Path | None, cache: Path | None = None) -> by
     cached = cache / f"{site.slug}.zip" if cache else None
     if cached and cached.exists():
         return cached.read_bytes()
-    feeds_doc = json.loads(fetch(FEEDS_URL)) if site.feed else {}
-    url = site.download_url(feeds_doc)
+    url = site.download_url()
     log.info("downloading %s", url)
     body = fetch(url)
     if cached:
@@ -76,25 +119,46 @@ def write_root(out: Path) -> None:
     write_files(build_root(summaries, date.today(), pages), out)
 
 
+def build_one(site: Site, zip_path: Path | None, cache: Path | None, out: Path) -> int:
+    """Build one site into a cleared `out/<slug>`. Returns its file count."""
+    files = build_site(feed_zip(site, zip_path, cache), site)
+    root = out / site.slug
+    clear(root)
+    write_files(files, root)
+    return len(files)
+
+
 def build(args: argparse.Namespace) -> None:
     """Build one site, or every site, into a cleared `out`, then the root."""
-    config = load_config(args.config.read_text())
     if args.zip and not args.site:
         raise SystemExit("--zip needs --site")
-    sites = [config.site(args.site)] if args.site else config.sites
-    if not args.site:
+    sites = load_sites(args.config, args.cache, not args.listed)
+    if args.site:
+        sites = [find_site(sites, args.site)]
+    else:
         clear(args.out)
-    for site in sites:
-        files = build_site(feed_zip(site, args.zip, args.cache), site)
-        root = args.out / site.slug
-        clear(root)
-        write_files(files, root)
-        log.info("wrote %d files to %s", len(files), root)
+    if args.country:
+        codes = {code.upper() for code in args.country}
+        sites = [s for s in sites if s.catalog and s.catalog.country_code in codes]
+    if args.limit:
+        sites = sites[: args.limit]
+    one = functools.partial(
+        build_one, zip_path=args.zip, cache=args.cache, out=args.out
+    )
+    failed = []
+    for site, result in run_all(one, sites, args.workers):
+        if isinstance(result, BaseException):
+            log.error("%s failed: %s", site.slug, result)
+            failed.append(site.slug)
+        else:
+            log.info("wrote %d files to %s", result, args.out / site.slug)
     write_root(args.out)
+    if failed:
+        raise SystemExit(f"{len(failed)} of {len(sites)} sites failed")
 
 
 def dump(args: argparse.Namespace) -> None:
-    site = load_config(args.config.read_text()).site(args.site)
+    site = find_site(load_sites(args.config, None), args.site)
     feed = site_feed(feed_zip(site, args.zip), site)
     today = args.date or date.today()
     for route, tables in site_timetables(feed, site, today):
@@ -179,9 +243,9 @@ def snapshot(paths: list[Path]) -> dict[Path, float]:
 
 
 def dev(args: argparse.Namespace) -> None:
-    """Build every site into a cleared dir, serve it, and rebuild on changes to
-    the package or config. Feeds are kept in `--cache` across runs; `--refresh`
-    downloads them again."""
+    """Build the sites listed in the config, or one site, into a cleared dir,
+    serve it, and rebuild on changes to the package or config. Feeds are kept
+    in `--cache` across runs; `--refresh` downloads them again."""
     watched = [PACKAGE, args.config]
     if args.refresh:
         clear(args.cache)
@@ -196,7 +260,7 @@ def dev(args: argparse.Namespace) -> None:
             str(args.dir),
         ]
         command += ["--config", str(args.config), "--cache", cache]
-        command += ["--site", args.site] if args.site else []
+        command += ["--site", args.site] if args.site else ["--listed"]
 
         def rebuild(changed: set[Path]) -> None:
             if any(p.name.endswith(CSS_SOURCES) for p in changed):
@@ -236,6 +300,16 @@ def parser() -> argparse.ArgumentParser:
     )
     build_cmd.add_argument("--out", type=Path, default=Path("dist"))
     build_cmd.add_argument("--config", type=Path, default=Path("sites.yaml"))
+    build_cmd.add_argument(
+        "--country", action="append", help="only sites in this country code"
+    )
+    build_cmd.add_argument("--limit", type=int, help="build at most this many sites")
+    build_cmd.add_argument(
+        "--listed", action="store_true", help="only the sites listed in the config"
+    )
+    build_cmd.add_argument(
+        "--workers", type=int, default=1, help="sites built in parallel"
+    )
     build_cmd.set_defaults(func=build)
 
     dump_cmd = commands.add_parser("dump", help="print one site's timetables")
@@ -262,7 +336,7 @@ def parser() -> argparse.ArgumentParser:
     serve_cmd.set_defaults(func=serve)
 
     dev_cmd = commands.add_parser(
-        "dev", help="build every site, serve, and rebuild on changes"
+        "dev", help="build the listed sites, serve, and rebuild on changes"
     )
     dev_cmd.add_argument("--site", help="build only this site")
     dev_cmd.add_argument(

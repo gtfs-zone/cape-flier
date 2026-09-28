@@ -8,6 +8,7 @@ import zipfile
 from datetime import date
 from importlib.metadata import version
 
+from cape_flier.catalog import shard_of
 from cape_flier.config import Site
 from cape_flier.gtfs.reader import Feed, Route, read_feed
 from cape_flier.gtfs.service import day_types, horizon_start
@@ -153,6 +154,9 @@ def build_site(
         brand_color=site.brand_color and site.brand_color.upper(),
         valid_through=through.isoformat() if through else None,
         generated=today.isoformat(),
+        country_code=site.catalog and site.catalog.country_code,
+        country=site.catalog and site.catalog.country,
+        subdivision=site.catalog and site.catalog.subdivision,
     )
     files["style.css"] = asset("style.css")
     files["logo.svg"] = asset("logo.svg")
@@ -179,13 +183,48 @@ def sitemap_urls(pages: dict[str, dict[str, str]]) -> list[tuple[str, str]]:
     return urls
 
 
+OTHER = "other"
+
+
+def country_key(summary: dict) -> str:
+    """The lowercase country code a site is listed under."""
+    return (summary.get("country_code") or OTHER).lower()
+
+
+def country_groups(sites: list[dict]) -> list[dict]:
+    """Countries by name, each with its sites grouped by subdivision."""
+    countries: dict[str, list[dict]] = {}
+    for site in sites:
+        countries.setdefault(country_key(site), []).append(site)
+    groups = []
+    for key, members in countries.items():
+        fallback = "Other" if key == OTHER else key.upper()
+        subdivisions: dict[str, list[dict]] = {}
+        for site in members:
+            subdivisions.setdefault(site.get("subdivision") or "", []).append(site)
+        groups.append(
+            {
+                "key": key,
+                "name": members[0].get("country") or fallback,
+                "sites": members,
+                # Unnamed subdivisions last.
+                "subdivisions": sorted(
+                    subdivisions.items(), key=lambda item: (not item[0], item[0])
+                ),
+            }
+        )
+    # Other last.
+    return sorted(groups, key=lambda g: (g["key"] == OTHER, g["name"].casefold()))
+
+
 def build_root(
     summaries: list[dict],
     today: date,
     pages: dict[str, dict[str, str]] | None = None,
     indexnow_key: str | None = None,
 ) -> dict[str, bytes]:
-    """The bucket root: index of every site, sitemap, robots.txt and the error
+    """The bucket root: an index of countries, a page per country listing its
+    sites, a sitemap index over one sitemap per shard, robots.txt and the error
     page. `summaries` are the sites' site.json contents and `pages` each site's
     page paths with the date they last changed. No I/O."""
     sites = sorted(
@@ -200,6 +239,7 @@ def build_root(
         ),
         key=lambda summary: summary["title"].casefold(),
     )
+    countries = country_groups(sites)
     common = {
         "site_title": ROOT_TITLE,
         "base_url": f"{BASE_URL}/",
@@ -215,19 +255,49 @@ def build_root(
     }
     files = {
         "index.html": render(
-            "root.html", **common, sites=sites, jsonld=website, root=""
+            "root.html",
+            **common,
+            countries=countries,
+            total=len(sites),
+            jsonld=website,
+            root="",
         ),
         "error.html": render("error.html", **common, root="/"),
         "style.css": asset("style.css"),
         "logo.svg": asset("logo.svg"),
-        "sitemap.xml": render(
-            "sitemap.xml",
-            urls=[(f"{BASE_URL}/", None), *sitemap_urls(pages or {})],
-        ),
-        "robots.txt": (
-            f"User-agent: *\nAllow: /\nSitemap: {BASE_URL}/sitemap.xml\n"
-        ).encode(),
     }
+    for country in countries:
+        url = f"{BASE_URL}/countries/{country['key']}/"
+        files[f"countries/{country['key']}/index.html"] = render(
+            "country.html",
+            **(common | {"base_url": url}),
+            country=country,
+            jsonld=breadcrumbs([(ROOT_TITLE, f"{BASE_URL}/"), (country["name"], url)]),
+            root="../../",
+        )
+
+    # One sitemap per shard of sites, so each stays far below 50,000 URLs.
+    root_urls = [(f"{BASE_URL}/", None)] + [
+        (f"{BASE_URL}/countries/{country['key']}/", None) for country in countries
+    ]
+    maps = {"sitemaps/root.xml": root_urls}
+    shards: dict[int, dict[str, dict[str, str]]] = {}
+    for slug, site_pages in (pages or {}).items():
+        shards.setdefault(shard_of(slug), {})[slug] = site_pages
+    for shard, shard_pages in sorted(shards.items()):
+        maps[f"sitemaps/{shard:02d}.xml"] = sitemap_urls(shard_pages)
+    for path, urls in maps.items():
+        files[path] = render("sitemap.xml", urls=urls)
+    files["sitemap.xml"] = render(
+        "sitemap-index.xml",
+        sitemaps=[
+            (f"{BASE_URL}/{path}", max((m for _, m in urls if m), default=None))
+            for path, urls in maps.items()
+        ],
+    )
+    files["robots.txt"] = (
+        f"User-agent: *\nAllow: /\nSitemap: {BASE_URL}/sitemap.xml\n"
+    ).encode()
     if indexnow_key:
         files[f"{indexnow_key}.txt"] = indexnow_key.encode()
     return files

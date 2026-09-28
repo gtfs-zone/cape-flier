@@ -3,15 +3,22 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from cape_flier.config import BasemapPair, RouteFilter, load_config
+from cape_flier.config import (
+    BasemapPair,
+    CatalogFeed,
+    RouteFilter,
+    Site,
+    load_config,
+    parse_feeds,
+)
 
 REPO_CONFIG = Path(__file__).parent.parent / "sites.yaml"
 
 
 def test_repo_config_loads():
     config = load_config(REPO_CONFIG.read_text())
-    assert config.site("columbia-county").basemap == "stadia-toner-dark"
-    assert config.site("amtrak").brand_color == "00537E"
+    assert config.entry("columbia-county").basemap == "stadia-toner-dark"
+    assert config.entry("amtrak").brand_color == "00537E"
 
 
 def test_site_overrides_defaults():
@@ -23,9 +30,9 @@ sites:
   - {slug: b, url: "https://example.org/b.zip", time_format: 12h}
 """
     )
-    assert config.site("a").time_format == "24h"
-    assert config.site("a").horizon_days == 14
-    assert config.site("b").time_format == "12h"
+    assert config.entry("a").time_format == "24h"
+    assert config.entry("a").horizon_days == 14
+    assert config.entry("b").time_format == "12h"
 
 
 def test_basemap_pair():
@@ -33,7 +40,7 @@ def test_basemap_pair():
         "sites: [{slug: a, url: u, basemap:"
         " {light: stadia-toner-lite, dark: stadia-toner-dark}}]"
     )
-    assert config.site("a").basemap == BasemapPair(
+    assert config.entry("a").basemap == BasemapPair(
         light="stadia-toner-lite", dark="stadia-toner-dark"
     )
 
@@ -53,6 +60,9 @@ def test_basemap_pair():
         "sites: [{slug: a, url: u, basemap: osm}]",
         "sites: [{slug: a, url: u, basemap: {light: stadia-toner-lite}}]",
         "sites: [{slug: a, url: u, interactive_map: true}]",
+        "sites: [{url: u}]",
+        "sites: [{feed: f-0123456789}, {slug: b, feed: f-0123456789}]",
+        "catalog: {countries: [US], max_size: 5}",
     ],
 )
 def test_invalid_config(text):
@@ -60,16 +70,35 @@ def test_invalid_config(text):
         load_config(text)
 
 
-def test_download_url_from_feeds_doc():
-    site = load_config("sites: [{slug: a, feed: f-0123456789}]").site("a")
+def test_download_url_from_catalog():
     doc = {
         "feeds": [
-            {"feedId": "f-0123456789", "urls": {"scheduled": ["https://x/g.zip"]}}
+            {
+                "feedId": "f-0123456789",
+                "name": "G",
+                "urls": {"scheduled": ["https://x/g.zip"], "vehicles": ["https://x/v"]},
+                "extra": "ignored",
+            }
         ]
     }
-    assert site.download_url(doc) == "https://x/g.zip"
+    feed = parse_feeds(doc)["f-0123456789"]
+    assert feed.urls["vehicles"] == ("https://x/v",)
+    site = Site(slug="a", feed=feed.feed_id, catalog=feed)
+    assert site.download_url() == "https://x/g.zip"
+    assert Site(slug="a", url="https://y/z.zip").download_url() == "https://y/z.zip"
     with pytest.raises(LookupError):
-        site.download_url({"feeds": []})
+        Site(slug="a", feed="f-0123456789").download_url()
+    empty = CatalogFeed(feedId="f-0123456789", name="G")
+    with pytest.raises(LookupError):
+        Site(slug="a", feed="f-0123456789", catalog=empty).download_url()
+
+
+def test_feed_entry_slug_optional():
+    config = load_config(
+        "catalog: {countries: [US]}\nsites: [{feed: f-0123456789, time_format: 24h}]"
+    )
+    assert config.sites[0].slug is None
+    assert config.catalog.countries == ("US",)
 
 
 def test_route_filter():

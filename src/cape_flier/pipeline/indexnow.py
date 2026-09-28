@@ -11,12 +11,17 @@ log = logging.getLogger(__name__)
 ENDPOINT = "https://api.indexnow.org/indexnow"
 # IndexNow keys are public: the bucket root serves it as <key>.txt.
 KEY = "23c63a4f9e2ddd584a4e284b82473960"
+# The most URLs one request may carry.
+BATCH = 10_000
 
 
 def ping(http: httpx.Client, urls: list[str]) -> None:
-    """Submit `urls`; failures are logged, never raised."""
-    if not urls:
-        return
+    """Submit `urls` in batches; failures are logged, never raised."""
+    for start in range(0, len(urls), BATCH):
+        submit(http, urls[start : start + BATCH])
+
+
+def submit(http: httpx.Client, urls: list[str]) -> None:
     body = {
         "host": BASE_URL.removeprefix("https://"),
         "key": KEY,

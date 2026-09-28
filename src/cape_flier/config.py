@@ -29,6 +29,7 @@ FEEDS_URL = "https://data.gtfs.zone/feeds.json"
 USER_AGENT = "cape-flier (+https://sites.gtfs.zone)"
 
 SLUG_PATTERN = r"^[a-z0-9]+(-[a-z0-9]+)*$"
+FEED_PATTERN = r"^f-[0-9a-f]{10}$"
 
 
 class Strict(BaseModel):
@@ -73,37 +74,90 @@ class RouteFilter(Strict):
         )
 
 
+class CatalogFeed(BaseModel):
+    """One entry of feeds.json, as geometry-car's `artifacts.feed_entry` writes it."""
+
+    model_config = ConfigDict(extra="ignore", frozen=True, populate_by_name=True)
+
+    feed_id: str = Field(alias="feedId")
+    name: str
+    members: tuple[str, ...] = ()
+    # role (scheduled, trip_updates, vehicles, alerts) to URLs, best first.
+    urls: dict[str, tuple[str, ...]] = {}
+    role_state: dict[str, str] = Field({}, alias="roleState")
+    state: str = "unknown"
+    country: str | None = None
+    country_code: str | None = None
+    subdivision: str | None = None
+    municipality: str | None = None
+    static_bytes: int | None = Field(None, alias="staticBytes")
+    bbox: tuple[float, float, float, float] | None = None
+
+
+def parse_feeds(feeds_doc: dict[str, Any]) -> dict[str, CatalogFeed]:
+    """feeds.json to {feed id: feed}."""
+    feeds = (CatalogFeed.model_validate(e) for e in feeds_doc.get("feeds", []))
+    return {feed.feed_id: feed for feed in feeds}
+
+
 class Site(Options):
     """One site with its options fully resolved against the defaults."""
 
     slug: str = Field(pattern=SLUG_PATTERN)
-    feed: str | None = Field(None, pattern=r"^f-[0-9a-f]{10}$")
+    feed: str | None = Field(None, pattern=FEED_PATTERN)
+    url: str | None = None
+    title: str | None = None
+    routes: RouteFilter = RouteFilter()
+    # The feed's catalog entry, when it is in feeds.json.
+    catalog: CatalogFeed | None = None
+
+    def download_url(self) -> str:
+        """The direct URL, else the catalog's best scheduled URL."""
+        if self.url is not None:
+            return self.url
+        if self.catalog is None:
+            raise LookupError(f"feed {self.feed} not in feeds.json")
+        urls = self.catalog.urls.get("scheduled")
+        if not urls:
+            raise LookupError(f"feed {self.feed} has no scheduled URL")
+        return urls[0]
+
+
+class SiteEntry(Options):
+    """One `sites:` entry. A catalog feed may leave its slug to be assigned."""
+
+    slug: str | None = Field(None, pattern=SLUG_PATTERN)
+    feed: str | None = Field(None, pattern=FEED_PATTERN)
     url: str | None = None
     title: str | None = None
     routes: RouteFilter = RouteFilter()
 
     @model_validator(mode="after")
     def one_source(self) -> Self:
+        name = self.slug or self.feed or self.url
         if (self.feed is None) == (self.url is None):
-            raise ValueError(f"site {self.slug!r} needs exactly one of feed or url")
+            raise ValueError(f"site {name!r} needs exactly one of feed or url")
+        if self.url is not None and self.slug is None:
+            raise ValueError(f"site {name!r} with a url needs a slug")
         return self
 
-    def download_url(self, feeds_doc: dict[str, Any]) -> str:
-        """The scheduled GTFS URL, looking a feed id up in feeds.json."""
-        if self.url is not None:
-            return self.url
-        for entry in feeds_doc.get("feeds", []):
-            if entry.get("feedId") == self.feed:
-                urls = entry.get("urls", {}).get("scheduled", [])
-                if urls:
-                    return urls[0]
-                raise LookupError(f"feed {self.feed} has no scheduled URL")
-        raise LookupError(f"feed {self.feed} not in feeds.json")
+    def resolve(self, slug: str, catalog: CatalogFeed | None) -> Site:
+        return Site(**self.model_dump(exclude={"slug"}), slug=slug, catalog=catalog)
+
+
+class CatalogFilter(Strict):
+    """Which feeds.json feeds become sites, beyond those in `sites:`. Only
+    feeds whose schedule is up are taken."""
+
+    countries: tuple[str, ...] = ()
+    max_bytes: int | None = Field(None, gt=0)
+    exclude: tuple[str, ...] = ()
 
 
 class Config(Strict):
     defaults: Options = Options()
-    sites: tuple[Site, ...] = ()
+    catalog: CatalogFilter | None = None
+    sites: tuple[SiteEntry, ...] = ()
 
     @model_validator(mode="before")
     @classmethod
@@ -119,14 +173,15 @@ class Config(Strict):
         return data | {"sites": merged}
 
     @model_validator(mode="after")
-    def unique_slugs(self) -> Self:
-        slugs = [site.slug for site in self.sites]
-        dupes = sorted({slug for slug in slugs if slugs.count(slug) > 1})
-        if dupes:
-            raise ValueError(f"duplicate site slugs: {', '.join(dupes)}")
+    def unique_entries(self) -> Self:
+        for field in ("slug", "feed"):
+            values = [getattr(s, field) for s in self.sites if getattr(s, field)]
+            dupes = sorted({v for v in values if values.count(v) > 1})
+            if dupes:
+                raise ValueError(f"duplicate site {field}s: {', '.join(dupes)}")
         return self
 
-    def site(self, slug: str) -> Site:
+    def entry(self, slug: str) -> SiteEntry:
         for site in self.sites:
             if site.slug == slug:
                 return site

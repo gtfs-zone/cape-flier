@@ -2,9 +2,9 @@
 
 ## Project Overview
 
-Generates a static timetable website per agency from GTFS, for a hand-picked
-list of feeds in `sites.yaml`, served from a Garage website bucket at
-`sites.gtfs.zone/<slug>/`.
+Generates a static timetable website per agency from GTFS, for the feeds listed
+in `sites.yaml` plus the geometry-car catalog feeds its `catalog:` filter takes,
+served from a Garage website bucket at `sites.gtfs.zone/<slug>/`.
 
 ## Commands
 
@@ -13,8 +13,8 @@ uv sync --all-extras                           # install dependencies, pipeline 
 ruff check .                                   # lint
 ruff format .                                  # format
 uv run pytest                                  # tests
-uv run cape-flier dev [--site <slug>] [--refresh]   # build all sites + root, serve, rebuild on changes; feeds cached in .cache/feeds/
-uv run cape-flier build [--site <slug>] [--zip <path>] [--cache <dir>] [--out dist/]
+uv run cape-flier dev [--site <slug>] [--refresh]   # build listed sites + root, serve, rebuild on changes; feeds cached in .cache/feeds/
+uv run cape-flier build [--site <slug>] [--zip <path>] [--cache <dir>] [--out dist/] [--listed] [--country CC] [--limit N] [--workers N]
 uv run cape-flier dump --site <slug> [--zip <path>] [--date YYYY-MM-DD] [--all-stops]
 uv run cape-flier serve                        # serve dist/ on the LAN
 uv run cape-flier sizes                        # largest built pages vs the 50 KB gzip budget
@@ -36,7 +36,9 @@ main without a tag do not deploy.
 
 | Module | What it does |
 |---|---|
-| `config.py` | Pydantic models for `sites.yaml`; defaults merged into each site |
+| `config.py` | Pydantic models for `sites.yaml` and a feeds.json entry (`CatalogFeed`); defaults merged into each site |
+| `catalog.py` | feeds.json plus `sites.yaml` to resolved sites: catalog filter, pinned slugs, shard per slug |
+| `pool.py` | Runs a function per item in memory-capped worker processes, one process per item |
 | `gtfs/reader.py` | GTFS zip to typed rows, streaming, only needed columns |
 | `gtfs/service.py` | Calendars to day types (Weekday / Saturday / Sunday / exceptions) |
 | `timetable.py` | Route + direction + day type to a `Timetable`, plus a text dump; stop order is interlocking's topological sort, falling back to an LCS fold on cycles |
@@ -47,7 +49,7 @@ main without a tag do not deploy.
 | `templates/` | Page templates and CSS (Tailwind + daisyUI, `style.css` built by `pnpm run build:css` and committed) |
 | `tests/fixtures/<name>/` | Synthetic GTFS feeds as text files, zipped by `fixture_zip` |
 | `cli.py` | `cape-flier build`, `dump`, `sizes`, `serve` and `dev`; downloads and writes files locally, with the root pages built as in the bucket |
-| `pipeline/` | Dagster code location (a partition per site) in geometry-car's instance: download, build, upload changed files to the bucket, rewrite the root, Gatus heartbeat |
+| `pipeline/` | Dagster code location (a partition per shard of sites) in geometry-car's instance: download, build and upload changed files per site in workers, shard file, rewrite the root, Gatus heartbeat |
 
 ## Rules
 
