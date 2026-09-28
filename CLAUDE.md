@@ -21,7 +21,16 @@ uv run cape-flier sizes                        # largest built pages vs the 50 K
 uv run dagster dev -m cape_flier.pipeline.definitions   # pipeline UI (needs S3_* env)
 pnpm install && pnpm run build:css             # rebuild templates/style.css after template changes
 pre-commit install                             # install git hooks
+uv run cz bump                                 # bump version, update CHANGELOG.md, tag (main only)
 ```
+
+## Releasing
+
+`uv run cz bump` on main, then push commits and tags to **both** remotes:
+`git push origin main --follow-tags && git push github main --follow-tags`. The
+`v*` tag triggers `.forgejo/workflows/build.yml`, which lints, tests, builds,
+pushes the image and commits its digest into `deploy-gtfs-rt/gtfs`. Pushes to
+main without a tag do not deploy.
 
 ## Architecture
 
