@@ -3,7 +3,7 @@ from datetime import date
 import pytest
 from conftest import fixture_zip, make_zip
 
-from cape_flier.gtfs.reader import parse_time, read_feed
+from cape_flier.gtfs.reader import parse_color, parse_time, read_feed
 
 
 def test_parse_time():
@@ -11,6 +11,14 @@ def test_parse_time():
     assert parse_time(" 6:45:00") == 6 * 3600 + 45 * 60
     assert parse_time("25:10:30") == 25 * 3600 + 10 * 60 + 30
     assert parse_time("") is None
+
+
+def test_parse_color():
+    assert parse_color("#00ff00") == "00FF00"
+    assert parse_color(" 002599 ") == "002599"
+    assert parse_color("ZZZZZZ") is None
+    assert parse_color("FFF") is None
+    assert parse_color("") is None
 
 
 def test_reads_rows_and_sorts_stop_times():

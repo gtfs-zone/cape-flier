@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import date
 
 REQUIRED_FILES = ("agency", "routes", "trips", "stop_times", "stops")
+HEX_DIGITS = frozenset("0123456789ABCDEF")
 
 
 @dataclass(frozen=True, slots=True)
@@ -176,7 +177,7 @@ def parse_float(text: str) -> float | None:
 
 def parse_color(text: str) -> str | None:
     text = text.strip().lstrip("#").upper()
-    return text if len(text) == 6 else None
+    return text if len(text) == 6 and all(c in HEX_DIGITS for c in text) else None
 
 
 class Archive:

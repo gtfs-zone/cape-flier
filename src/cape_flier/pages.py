@@ -7,6 +7,7 @@ from datetime import date, datetime, time
 from itertools import groupby
 from zoneinfo import ZoneInfo
 
+from cape_flier.colors import route_color
 from cape_flier.config import TimeFormat
 from cape_flier.gtfs.reader import Feed, Route
 from cape_flier.gtfs.service import (
@@ -71,12 +72,11 @@ def text_color(background: str, text: str | None = None) -> str:
     return text
 
 
-def badge_colors(route: Route) -> tuple[str, str] | None:
-    """(background, text) for a route badge, keeping the feed's text color
-    only when it contrasts enough."""
-    if route.color is None:
-        return None
-    return route.color, text_color(route.color, route.text_color)
+def badge_colors(route: Route) -> tuple[str, str]:
+    """(background, text) for a route badge: the feed's color or a hashed one,
+    keeping the feed's text color only when it contrasts enough."""
+    color = route_color(route.route_id, route.color)
+    return color, text_color(color, route.text_color)
 
 
 # Basic GTFS route types, then extended ones as (first, last) ranges.

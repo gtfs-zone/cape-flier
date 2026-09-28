@@ -68,7 +68,7 @@ def test_badge_text_falls_back_to_contrasting_color():
     assert badge_colors(route(color="FFFF00", text="FFFFFF")) == ("FFFF00", "000000")
     assert badge_colors(route(color="002599")) == ("002599", "FFFFFF")
     assert badge_colors(route(color="002599", text="FFCC00")) == ("002599", "FFCC00")
-    assert badge_colors(route()) is None
+    assert badge_colors(route("1")) == ("5B87C8", "000000")
 
 
 def test_route_slugs_are_unique():

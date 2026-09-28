@@ -61,6 +61,9 @@ Stadia styles: `stadia-alidade-smooth`, `stadia-alidade-smooth-dark`,
 `route_ids`, `exclude_route_types` and `exclude_route_ids`. Unknown keys are an
 error.
 
+Routes without a valid `route_color` get a color hashed from their `route_id`,
+the same one interlocking and coloring-book use.
+
 ## Library
 
 `cape_flier.build.build_site(zip_bytes, site)` returns `{path: bytes}` for one
