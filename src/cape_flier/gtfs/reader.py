@@ -12,6 +12,10 @@ REQUIRED_FILES = ("agency", "routes", "trips", "stop_times", "stops")
 HEX_DIGITS = frozenset("0123456789ABCDEF")
 
 
+class MissingFiles(ValueError):
+    """A GTFS zip without one of the files a timetable needs."""
+
+
 @dataclass(frozen=True, slots=True)
 class Agency:
     agency_id: str
@@ -460,7 +464,7 @@ def read_feed(
         if not (archive.has("calendar") or archive.has("calendar_dates")):
             missing.append("calendar or calendar_dates")
         if missing:
-            raise ValueError(f"GTFS zip is missing {', '.join(missing)}")
+            raise MissingFiles(f"GTFS zip is missing {', '.join(missing)}")
 
         routes = read_routes(archive)
         if keep_route is not None:

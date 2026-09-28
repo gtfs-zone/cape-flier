@@ -9,17 +9,28 @@ Sites are built in shards. Each shard keeps `_shards/<nn>.json`, per site its
 summary, build date and page dates, so the root is rewritten from the shard
 files rather than from every site's manifest. `slugs.json` pins each catalog
 feed's slug.
+
+Each shard also keeps `_content/<nn>.json`, per site the outcome of its last
+download (ok or why the feed is unusable) and, when ok, what the zip contains.
+geometry-car reads these, listed in `_content/index.json`. A feed that was
+unusable is not downloaded again until its catalog HEAD facts or the
+cape-flier version change, or RETRY_DAYS pass.
 """
 
 import hashlib
+import io
 import json
 import logging
+import re
+import zipfile
 from collections.abc import Callable
 from datetime import date
 from typing import TYPE_CHECKING, Protocol
 
 from cape_flier.build import build_root, build_site, page_digest
 from cape_flier.config import Site
+from cape_flier.facts import sniff
+from cape_flier.gtfs.reader import MissingFiles
 from cape_flier.pool import run_all
 
 if TYPE_CHECKING:
@@ -30,8 +41,37 @@ log = logging.getLogger(__name__)
 MANIFEST = "manifest.json"
 SLUGS = "slugs.json"
 SHARD_PREFIX = "_shards/"
+CONTENT_PREFIX = "_content/"
+CONTENT_INDEX = f"{CONTENT_PREFIX}index.json"
 # Keys at the root that are state, not pages, and never pruned.
-STATE = (SLUGS, SHARD_PREFIX)
+STATE = (SLUGS, SHARD_PREFIX, CONTENT_PREFIX)
+# Outcomes that are the feed's fault; such a feed is skipped until it changes.
+BAD = frozenset({"not_zip", "missing_files", "parse_error"})
+RETRY_DAYS = 7
+DETAIL_LENGTH = 200
+# httpx transport failures, by exception name.
+TRANSPORT_ERRORS = frozenset(
+    {
+        "ConnectError",
+        "ReadError",
+        "WriteError",
+        "RemoteProtocolError",
+        "LocalProtocolError",
+        "ProxyError",
+        "UnsupportedProtocol",
+        "TooManyRedirects",
+    }
+)
+HTTP_STATUS = re.compile(r"'(\d{3}) ")
+
+
+class FeedProblem(Exception):
+    """A download that is not a usable GTFS zip, as "outcome: detail"."""
+
+    def __init__(self, outcome: str, detail: str) -> None:
+        super().__init__(f"{outcome}: {detail}")
+
+
 # Below this share of the sites listed so far, a catalog is taken to be broken
 # and no site is deleted.
 PRUNE_RATIO = 0.8
@@ -167,8 +207,9 @@ def build_and_publish(
             "counts": {"files": len(previous["files"]), "uploaded": 0, "deleted": 0},
             "changed": [],
             "entry": site_entry(summary, previous["built"], previous["pages"]),
+            "content": read_json(store, f"{site.slug}/content.json") or {},
         }
-    files = build_site(body, site, today)
+    files = checked_build(body, site, today)
     counts, changed, pages = publish_site(
         store, site.slug, files, source, today, version
     )
@@ -177,11 +218,105 @@ def build_and_publish(
         "counts": counts,
         "changed": changed,
         "entry": site_entry(summary, today.isoformat(), pages),
+        "content": json.loads(files["content.json"]),
     }
+
+
+def checked_build(body: bytes, site: Site, today: date) -> dict[str, bytes]:
+    """build_site, with a body that is not a usable GTFS zip raised as a
+    FeedProblem."""
+    if not zipfile.is_zipfile(io.BytesIO(body)):
+        raise FeedProblem("not_zip", sniff(body))
+    try:
+        return build_site(body, site, today)
+    except zipfile.BadZipFile as exc:
+        raise FeedProblem("not_zip", str(exc)) from None
+    except MissingFiles as exc:
+        raise FeedProblem("missing_files", str(exc)) from None
+    except (ValueError, KeyError, IndexError, UnicodeDecodeError) as exc:
+        raise FeedProblem("parse_error", f"{type(exc).__name__}: {exc}") from None
+
+
+def classify(error: str) -> tuple[str, str]:
+    """(outcome, detail) of a worker's "ExceptionType: message" error."""
+    name, _, message = error.partition(": ")
+    if name == "FeedProblem":
+        outcome, _, detail = message.partition(": ")
+        return outcome, detail
+    if name == "HTTPStatusError":
+        match = HTTP_STATUS.search(message)
+        return "http_error", f"HTTP {match[1]}" if match else message
+    if name in TRANSPORT_ERRORS:
+        return "http_error", error
+    if name.endswith("Timeout"):
+        return "timeout", name
+    if name in ("MemoryError", "BrokenProcessPool"):
+        return "memory", name
+    return "error", error
+
+
+def site_url(site: Site) -> str | None:
+    """The site's download URL, None when the catalog has none."""
+    try:
+        return site.download_url()
+    except LookupError:
+        return None
+
+
+def head_facts(site: Site) -> dict:
+    """The catalog's HEAD facts for the site's feed."""
+    if site.catalog is None:
+        return {}
+    return {
+        "bytes": site.catalog.static_bytes,
+        "lastModified": site.catalog.last_modified,
+    }
+
+
+def content_entry(
+    site: Site,
+    today: date,
+    version: str,
+    outcome: str,
+    detail: str,
+    previous: dict | None,
+    facts: dict | None = None,
+) -> dict:
+    """A site's line in its shard's content report."""
+    same = previous and previous.get("outcome") == outcome
+    entry = {
+        "feedId": site.feed,
+        "url": site_url(site),
+        "checked": today.isoformat(),
+        "version": version,
+        "outcome": outcome,
+        "since": previous["since"] if same else today.isoformat(),
+        "head": head_facts(site),
+    }
+    if detail:
+        entry["detail"] = detail[:DETAIL_LENGTH]
+    return entry | (facts or {})
+
+
+def known_bad(site: Site, previous: dict | None, today: date, version: str) -> bool:
+    """Whether the feed was unusable at its last download and nothing that
+    could change that has changed since."""
+    return bool(
+        previous
+        and previous.get("outcome") in BAD
+        and previous.get("version") == version
+        and previous.get("url") == site_url(site)
+        and previous.get("head") == head_facts(site)
+        and (today - date.fromisoformat(previous["checked"])).days < RETRY_DAYS
+    )
 
 
 def shard_key(shard: int) -> str:
     return f"{SHARD_PREFIX}{shard:02d}.json"
+
+
+def content_key(shard: int) -> str:
+    return f"{CONTENT_PREFIX}{shard:02d}.json"
 
 
 def run_shard(
@@ -189,17 +324,26 @@ def run_shard(
     shard: int,
     sites: list[Site],
     publish: Callable[[Site], dict],
+    today: date,
+    version: str,
     workers: int = 1,
     max_bytes: int | None = None,
-) -> tuple[dict[str, dict], dict[str, str]]:
-    """Build and publish the shard's sites, largest feed first, then write its
-    shard file. A site that fails keeps its previous entry and output. Returns
-    each site's result and each failure's error."""
+) -> tuple[dict[str, dict], dict[str, str], list[str]]:
+    """Build and publish the shard's sites, largest feed first, skipping feeds
+    known to be bad, then write its shard file and content report. A site that
+    fails or is skipped keeps its previous entry and output. Returns each
+    site's result, each failure's error and the skipped slugs."""
     old = read_json(store, shard_key(shard)) or {}
+    old_content = read_json(store, content_key(shard)) or {}
     results: dict[str, dict] = {}
     failures: dict[str, str] = {}
+    skipped = sorted(
+        site.slug
+        for site in sites
+        if known_bad(site, old_content.get(site.slug), today, version)
+    )
     by_size = sorted(
-        sites,
+        (site for site in sites if site.slug not in skipped),
         key=lambda s: -((s.catalog and s.catalog.static_bytes) or 0),
     )
     for site, result in run_all(publish, by_size, workers, max_bytes):
@@ -215,7 +359,24 @@ def run_shard(
         for site in sites
     }
     put_json(store, shard_key(shard), {k: v for k, v in entries.items() if v})
-    return results, failures
+
+    content = {}
+    for site in sites:
+        previous = old_content.get(site.slug)
+        if site.slug in skipped:
+            content[site.slug] = previous
+        elif site.slug in results:
+            facts = results[site.slug]["content"]
+            content[site.slug] = content_entry(
+                site, today, version, "ok", "", previous, facts
+            )
+        else:
+            outcome, detail = classify(failures[site.slug])
+            content[site.slug] = content_entry(
+                site, today, version, outcome, detail, previous
+            )
+    put_json(store, content_key(shard), content)
+    return results, failures, skipped
 
 
 def read_entries(store: Store) -> dict[str, dict]:
@@ -224,6 +385,14 @@ def read_entries(store: Store) -> dict[str, dict]:
     for key in sorted(store.list_keys(SHARD_PREFIX)):
         entries |= read_json(store, key) or {}
     return entries
+
+
+def read_contents(store: Store) -> dict[str, dict]:
+    """Every content report's entries by slug."""
+    contents: dict[str, dict] = {}
+    for key in sorted(store.list_keys(CONTENT_PREFIX) - {CONTENT_INDEX}):
+        contents |= read_json(store, key) or {}
+    return contents
 
 
 def publish_root(
@@ -245,6 +414,8 @@ def publish_root(
     )
     for path, body in files.items():
         store.put(path, body)
+    reports = sorted(store.list_keys(CONTENT_PREFIX) - {CONTENT_INDEX})
+    put_json(store, CONTENT_INDEX, {"shards": reports})
     if len(live) < PRUNE_RATIO * len(entries):
         log.warning(
             "only %d sites of %d listed; not deleting any", len(live), len(entries)

@@ -14,6 +14,7 @@ from cape_flier.gtfs.service import (
     DayType,
     dates_label,
     day_order,
+    last_service_date,
     missing_label,
     trip_note,
 )
@@ -692,11 +693,4 @@ def valid_through(feed: Feed, today: date) -> date | None:
 def feed_end(feed: Feed) -> date | None:
     if feed.feed_info and feed.feed_info.end:
         return feed.feed_info.end
-    ends = [calendar.end for calendar in feed.calendars.values()]
-    ends += [
-        day
-        for exceptions in feed.calendar_dates.values()
-        for day, added in exceptions.items()
-        if added
-    ]
-    return max(ends, default=None)
+    return last_service_date(feed)

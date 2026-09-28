@@ -77,11 +77,21 @@ runs every shard. A run resolves the sites from `sites.yaml` and feeds.json,
 then for each of its shard's sites, in worker processes: download the feed,
 build it, upload the files whose hash changed to the `sites.gtfs.zone` bucket,
 delete ones no longer built and write `<slug>/manifest.json`. A site that fails
-keeps its previous pages. The run then writes `_shards/<nn>.json` and rewrites
-the bucket root from every shard file (country index, a page per country, a
-sitemap index over one sitemap per shard, `robots.txt`, `error.html`), deleting
-sites no longer resolved unless the site count fell by more than 20%. A Gatus
-heartbeat is pushed once 95% of sites have been built that day.
+keeps its previous pages. The run then writes `_shards/<nn>.json` and
+`_content/<nn>.json`, and rewrites the bucket root from every shard file (country
+index, a page per country, a sitemap index over one sitemap per shard,
+`robots.txt`, `error.html`), deleting sites no longer resolved unless the site
+count fell by more than 20%. A Gatus heartbeat is pushed once 95% of sites have
+been built that day, not counting feeds known to be unusable.
+
+The content report `_content/<nn>.json`, listed in `_content/index.json`, holds
+per site the outcome of its last download (`ok`, `not_zip`, `missing_files`,
+`parse_error`, `http_error`, `timeout`, `memory` or `error`) and the day that
+outcome began. For an `ok` feed it also holds the zip's size and hash,
+feed_info, service range, agencies, counts and route types. geometry-car merges
+it into feeds.json. A feed that was `not_zip`, `missing_files` or
+`parse_error` is not downloaded again until its catalog size or Last-Modified,
+its URL or the cape-flier version changes, or a week passes.
 
 ```bash
 uv sync --extra pipeline

@@ -9,7 +9,8 @@ from datetime import date
 from importlib.metadata import version
 
 from cape_flier.catalog import shard_of
-from cape_flier.config import Site
+from cape_flier.config import RouteFilter, Site
+from cape_flier.facts import feed_facts
 from cape_flier.gtfs.reader import Feed, Route, read_feed
 from cape_flier.gtfs.service import day_types, horizon_start
 from cape_flier.maps.svg import route_map, system_map
@@ -157,6 +158,9 @@ def build_site(
         country_code=site.catalog and site.catalog.country_code,
         country=site.catalog and site.catalog.country,
         subdivision=site.catalog and site.catalog.subdivision,
+    )
+    files["content.json"] = summary_json(
+        **feed_facts(zip_bytes, feed, site.routes != RouteFilter())
     )
     files["style.css"] = asset("style.css")
     files["logo.svg"] = asset("logo.svg")

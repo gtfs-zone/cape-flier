@@ -2,15 +2,18 @@ import json
 from datetime import date
 
 import pytest
-from conftest import fixture_zip
+from conftest import fixture_zip, make_zip
 
 from cape_flier.catalog import shard_of
 from cape_flier.config import CatalogFeed, Site
 from cape_flier.pipeline.publish import (
+    FeedProblem,
     build_and_publish,
+    classify,
     download,
     publish_root,
     publish_site,
+    read_contents,
     read_entries,
     run_shard,
 )
@@ -164,9 +167,12 @@ def test_build_and_publish_then_skip_unchanged_feed():
     assert result["entry"]["summary"]["slug"] == "s"
     assert result["entry"]["pages"]["index.html"] == "2026-10-05"
 
+    assert result["content"]["counts"]["routes"] > 0
+
     again = build_and_publish(store, client(handler), site, TODAY, "1")
     assert again["counts"]["uploaded"] == 0 and again["changed"] == []
     assert again["entry"] == result["entry"]
+    assert again["content"] == result["content"]
     assert len(calls) == 2
 
 
@@ -186,16 +192,165 @@ def test_run_shard_keeps_failed_sites_previous_entry():
         order.append(site.slug)
         if site.slug == "a":
             raise ValueError("bad zip")
-        return {"counts": {}, "changed": [], "entry": entry(site.slug, "2026-10-05")}
+        return built(site.slug)
 
-    results, failures = run_shard(store, 3, sites, publish)
+    results, failures, skipped = run_shard(store, 3, sites, publish, TODAY, "1")
     assert order == ["b", "a", "c"]
     assert set(results) == {"b", "c"}
     assert failures == {"a": "ValueError: bad zip"}
+    assert skipped == []
     shard = json.loads(store.objects["_shards/03.json"])
     assert shard["a"]["built"] == "2026-10-04"
     assert shard["b"]["built"] == shard["c"]["built"] == "2026-10-05"
     assert read_entries(store) == shard
+
+    report = json.loads(store.objects["_content/03.json"])
+    assert report["a"]["outcome"] == "error"
+    assert report["a"]["detail"] == "ValueError: bad zip"
+    assert report["b"]["routes"] == 1
+    assert report["b"]["outcome"] == "ok" and report["b"]["feedId"] == big.feed_id
+    assert report["b"]["head"] == {"bytes": 99, "lastModified": None}
+    assert report["c"]["url"] == "u" and report["c"]["head"] == {}
+    assert read_contents(store) == report
+
+
+FACTS = {"routes": 1}
+
+
+def built(slug):
+    return {
+        "counts": {},
+        "changed": [],
+        "entry": entry(slug, "2026-10-05"),
+        "content": FACTS,
+    }
+
+
+def bad_zip(site):
+    raise FeedProblem("not_zip", "html")
+
+
+def test_run_shard_skips_known_bad_feed_until_it_changes():
+    feed = CatalogFeed(
+        feedId="f-0000000001",
+        name="A",
+        staticBytes=10,
+        urls={"scheduled": ["https://x/g.zip"]},
+    )
+    site = Site(slug="a", feed=feed.feed_id, catalog=feed)
+    store = FakeStore()
+    calls = []
+
+    def publish(site):
+        calls.append(site.slug)
+        return bad_zip(site)
+
+    run_shard(store, 0, [site], publish, date(2026, 10, 1), "1")
+    first = json.loads(store.objects["_content/00.json"])["a"]
+    assert first["outcome"] == "not_zip" and first["detail"] == "html"
+    assert first["since"] == "2026-10-01"
+
+    # Same HEAD facts and version within the week: skipped, report kept.
+    _, failures, skipped = run_shard(store, 0, [site], publish, TODAY, "1")
+    assert skipped == ["a"] and failures == {} and calls == ["a"]
+    assert json.loads(store.objects["_content/00.json"])["a"] == first
+
+    # A new version retries, and the outcome keeps its first day.
+    run_shard(store, 0, [site], publish, TODAY, "2")
+    assert calls == ["a", "a"]
+    again = json.loads(store.objects["_content/00.json"])["a"]
+    assert again["since"] == "2026-10-01" and again["checked"] == "2026-10-05"
+
+    # Changed HEAD facts retry, and a success starts a new outcome.
+    changed = feed.model_copy(update={"static_bytes": 11})
+    fixed = site.model_copy(update={"catalog": changed})
+    _, _, skipped = run_shard(store, 0, [fixed], lambda s: built(s.slug), TODAY, "2")
+    assert skipped == []
+    ok = json.loads(store.objects["_content/00.json"])["a"]
+    assert ok["outcome"] == "ok" and ok["since"] == "2026-10-05"
+    assert "detail" not in ok
+
+
+def test_run_shard_retries_known_bad_feed_after_a_week():
+    site = Site(slug="a", url="https://x/g.zip")
+    store = FakeStore()
+    calls = []
+
+    def publish(site):
+        calls.append(site.slug)
+        return bad_zip(site)
+
+    run_shard(store, 0, [site], publish, date(2026, 9, 28), "1")
+    run_shard(store, 0, [site], publish, TODAY, "1")
+    assert calls == ["a", "a"]
+
+
+def test_run_shard_does_not_skip_transient_failures():
+    site = Site(slug="a", url="https://x/g.zip")
+    store = FakeStore()
+    calls = []
+
+    def publish(site):
+        calls.append(site.slug)
+        raise httpx.ConnectTimeout("slow")
+
+    run_shard(store, 0, [site], publish, TODAY, "1")
+    run_shard(store, 0, [site], publish, TODAY, "1")
+    assert calls == ["a", "a"]
+    report = json.loads(store.objects["_content/00.json"])["a"]
+    assert report["outcome"] == "timeout"
+
+
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [
+        ("FeedProblem: not_zip: html", ("not_zip", "html")),
+        (
+            "FeedProblem: missing_files: GTFS zip is missing stops",
+            ("missing_files", "GTFS zip is missing stops"),
+        ),
+        (
+            "HTTPStatusError: Client error '403 Forbidden' for url 'https://x'",
+            ("http_error", "HTTP 403"),
+        ),
+        (
+            "ConnectError: [Errno -2] Name",
+            ("http_error", "ConnectError: [Errno -2] Name"),
+        ),
+        ("ReadTimeout: timed out", ("timeout", "ReadTimeout")),
+        ("BrokenProcessPool: worker died", ("memory", "BrokenProcessPool")),
+        ("MemoryError: ", ("memory", "MemoryError")),
+        ("KeyError: 'x'", ("error", "KeyError: 'x'")),
+    ],
+)
+def test_classify(error, expected):
+    assert classify(error) == expected
+
+
+@pytest.mark.parametrize(
+    ("body", "outcome"),
+    [
+        (b"<!DOCTYPE html><html></html>", "not_zip: html"),
+        (b"", "not_zip: empty"),
+        (make_zip({"agency.txt": "agency_id\n"}), "missing_files: GTFS zip is missing"),
+    ],
+)
+def test_build_and_publish_raises_feed_problems(body, outcome):
+    site = Site(slug="s", url="https://x/g.zip")
+
+    def handler(request):
+        return httpx.Response(200, content=body)
+
+    with pytest.raises(FeedProblem, match=outcome):
+        build_and_publish(FakeStore(), client(handler), site, TODAY, "1")
+
+
+def test_publish_root_lists_content_reports():
+    store = FakeStore({"_content/00.json": b"{}", "_content/07.json": b"{}"})
+    publish_root(store, {}, set(), TODAY)
+    index = json.loads(store.objects["_content/index.json"])
+    assert index == {"shards": ["_content/00.json", "_content/07.json"]}
+    assert "_content/00.json" in store.objects
 
 
 def client(handler):

@@ -24,6 +24,7 @@ def test_site_files():
         "index.html",
         "4/index.html",
         "site.json",
+        "content.json",
         "style.css",
         "logo.svg",
     }
@@ -75,6 +76,7 @@ def test_site_with_brand_and_basemap():
         "index.html",
         "4/index.html",
         "site.json",
+        "content.json",
         "style.css",
         "logo.svg",
     }

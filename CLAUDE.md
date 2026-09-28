@@ -45,12 +45,13 @@ main without a tag do not deploy.
 | `strip.py` | Stop-column rail lanes, endpoints and minority stops, ported from interlocking's `route-graph.ts` / `route-strip.ts` |
 | `colors.py` | Hashed color for a route without `route_color`, a hex-exact port of interlocking's `route-colors.ts` |
 | `build.py` | `build_site(zip_bytes, site) -> {path: bytes}`, the only entry point |
+| `facts.py` | What a parsed zip contains (feed_info, service range, agencies, counts) for the content report |
 | `maps/svg.py` | Route and system maps as inline SVG: Web Mercator, Douglas-Peucker, label placement (none on bus-only system maps), basemap tiles |
 | `render.py` | Jinja environment over `templates/` |
 | `templates/` | Page templates and CSS (Tailwind + daisyUI, `style.css` built by `pnpm run build:css` and committed) |
 | `tests/fixtures/<name>/` | Synthetic GTFS feeds as text files, zipped by `fixture_zip` |
 | `cli.py` | `cape-flier build`, `dump`, `sizes`, `serve` and `dev`; downloads and writes files locally, with the root pages built as in the bucket |
-| `pipeline/` | Dagster code location (a partition per shard of sites) in geometry-car's instance: download, build and upload changed files per site in workers, shard file, rewrite the root, Gatus heartbeat |
+| `pipeline/` | Dagster code location (a partition per shard of sites) in geometry-car's instance: download, build and upload changed files per site in workers, shard file and content report, skip known-bad feeds, rewrite the root, Gatus heartbeat |
 
 ## Rules
 

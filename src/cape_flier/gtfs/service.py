@@ -107,6 +107,17 @@ def first_service_date(feed: Feed) -> date | None:
     return min(starts, default=None)
 
 
+def last_service_date(feed: Feed) -> date | None:
+    ends = [calendar.end for calendar in feed.calendars.values()]
+    ends += [
+        day
+        for exceptions in feed.calendar_dates.values()
+        for day, added in exceptions.items()
+        if added
+    ]
+    return max(ends, default=None)
+
+
 def horizon_start(feed: Feed, today: date) -> date:
     """Today, or the feed's first service date when that is later."""
     first = first_service_date(feed)

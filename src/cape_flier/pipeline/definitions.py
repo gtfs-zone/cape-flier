@@ -4,11 +4,13 @@ rebuilt daily and once more whenever a new cape-flier version is deployed.
 Each run resolves every site from sites.yaml and feeds.json, builds its shard's
 sites in worker processes and then rewrites the bucket root from every shard's
 file, so the root is current after every run. The Gatus heartbeat is pushed
-once nearly every site has been built today.
+once nearly every site has been built today, not counting feeds known to be
+unusable.
 """
 
 import functools
 import os
+from collections import Counter
 from datetime import date
 from importlib.metadata import version
 from pathlib import Path
@@ -38,9 +40,12 @@ from cape_flier.pipeline import indexnow
 from cape_flier.pipeline.bucket import Bucket, BucketSettings
 from cape_flier.pipeline.heartbeat import push_heartbeat
 from cape_flier.pipeline.publish import (
+    BAD,
     SLUGS,
+    content_key,
     publish_root,
     put_json,
+    read_contents,
     read_entries,
     read_json,
     run_shard,
@@ -79,15 +84,18 @@ def site_pages(context: AssetExecutionContext) -> MaterializeResult:
         context.log.info("shard %02d: %d of %d sites", shard, len(mine), len(sites))
 
         publish = functools.partial(publish_one, today=today, version=VERSION)
-        results, failures = run_shard(
-            bucket, shard, mine, publish, WORKERS, WORKER_MEMORY
+        results, failures, skipped = run_shard(
+            bucket, shard, mine, publish, today, VERSION, WORKERS, WORKER_MEMORY
         )
         for slug, error in sorted(failures.items()):
             context.log.warning("%s: %s", slug, error)
+        if skipped:
+            context.log.info("skipped %d known bad feeds", len(skipped))
 
         # After the root, which serves the IndexNow key file.
         live = {site.slug for site in sites}
         behind = publish_root(bucket, read_entries(bucket), live, today, indexnow.KEY)
+        contents = read_contents(bucket)
         indexnow.ping(
             http,
             [
@@ -96,18 +104,29 @@ def site_pages(context: AssetExecutionContext) -> MaterializeResult:
                 for path in result["changed"]
             ],
         )
-    context.log.info("%d of %d sites not built today", len(behind), len(live))
-    if len(behind) <= BEHIND_RATIO * len(live):
+    bad = {slug for slug in behind if contents.get(slug, {}).get("outcome") in BAD}
+    context.log.info(
+        "%d of %d sites not built today, %d of them known bad",
+        len(behind),
+        len(live),
+        len(bad),
+    )
+    if len(behind) - len(bad) <= BEHIND_RATIO * len(live):
         push_heartbeat()
 
     uploaded = sum(result["counts"]["uploaded"] for result in results.values())
+    report = read_json(bucket, content_key(shard)) or {}
+    outcomes = Counter(entry["outcome"] for entry in report.values() if entry)
     return MaterializeResult(
         metadata={
             "sites": len(mine),
             "built": len(results),
             "failed": len(failures),
+            "skipped": len(skipped),
+            "outcomes": MetadataValue.json(dict(outcomes)),
             "uploaded": uploaded,
             "behind": len(behind),
+            "behind_bad": len(bad),
             "failures": MetadataValue.json(failures),
             "root": MetadataValue.url(f"{BASE_URL}/"),
         }

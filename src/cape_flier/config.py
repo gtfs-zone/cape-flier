@@ -91,6 +91,7 @@ class CatalogFeed(BaseModel):
     subdivision: str | None = None
     municipality: str | None = None
     static_bytes: int | None = Field(None, alias="staticBytes")
+    last_modified: str | None = Field(None, alias="lastModified")
     bbox: tuple[float, float, float, float] | None = None
 
 
