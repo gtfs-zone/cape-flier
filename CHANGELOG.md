@@ -1,3 +1,9 @@
+## v0.6.0 (2026-09-29)
+
+### Feat
+
+- **maps**: label trip ends and caption stops on hover
+
 ## v0.5.0 (2026-09-29)
 
 ### Feat
