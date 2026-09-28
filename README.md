@@ -13,6 +13,7 @@ uv sync
 uv run cape-flier build --site columbia-county         # download the feed, write dist/columbia-county/
 uv run cape-flier build --site columbia-county --zip feed.zip   # use a local zip
 uv run cape-flier serve                                 # serve dist/ on the LAN, port 8000
+uv run cape-flier sizes                                 # largest built pages, gzip and raw
 ```
 
 `build` resolves a site's `feed:` id to its download URL through
@@ -40,6 +41,24 @@ error.
 
 `cape_flier.build.build_site(zip_bytes, site)` returns `{path: bytes}` for one
 site and does no I/O, so it can run anywhere Python does.
+
+## Pipeline
+
+`cape_flier.pipeline.definitions` is a Dagster code location with one partition
+per site. A daily schedule at 11:00 UTC runs every site: download the feed,
+build it, upload the files whose hash changed to the `sites.gtfs.zone` bucket,
+delete ones no longer built, write `<slug>/manifest.json`, then rewrite the
+bucket root (index, sitemap index, `robots.txt`, `error.html`). A Gatus
+heartbeat is pushed once every site has been built that day.
+
+```bash
+uv sync --extra pipeline
+S3_ENDPOINT=... S3_ACCESS_KEY=... S3_SECRET_KEY=... uv run dagster dev -m cape_flier.pipeline.definitions
+```
+
+Environment: `S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_BUCKET`
+(default `sites.gtfs.zone`), `S3_REGION` (default `garage`), `GATUS_URL`,
+`GATUS_TOKEN`, `CAPE_FLIER_CONFIG` (default `sites.yaml`).
 
 ## License
 

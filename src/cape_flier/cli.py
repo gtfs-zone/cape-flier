@@ -13,13 +13,10 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from cape_flier.build import build_site, site_feed, site_timetables
-from cape_flier.config import Site, load_config
+from cape_flier.config import FEEDS_URL, USER_AGENT, Site, load_config
 from cape_flier.timetable import to_text
 
 log = logging.getLogger(__name__)
-
-FEEDS_URL = "https://data.gtfs.zone/feeds.json"
-USER_AGENT = "cape-flier (+https://sites.gtfs.zone)"
 
 
 def fetch(url: str) -> bytes:

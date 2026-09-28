@@ -9,13 +9,15 @@ list of feeds in `sites.yaml`, served from a Garage website bucket at
 ## Commands
 
 ```bash
-uv sync                                        # install dependencies
+uv sync --all-extras                           # install dependencies, pipeline included
 ruff check .                                   # lint
 ruff format .                                  # format
 uv run pytest                                  # tests
 uv run cape-flier build --site <slug> [--zip <path>] [--out dist/]
 uv run cape-flier dump --site <slug> [--zip <path>] [--date YYYY-MM-DD] [--all-stops]
 uv run cape-flier serve                        # serve dist/ on the LAN
+uv run cape-flier sizes                        # largest built pages vs the 50 KB gzip budget
+uv run dagster dev -m cape_flier.pipeline.definitions   # pipeline UI (needs S3_* env)
 pnpm install && pnpm run build:css             # rebuild templates/style.css after template changes
 pre-commit install                             # install git hooks
 ```
@@ -33,7 +35,8 @@ pre-commit install                             # install git hooks
 | `render.py` | Jinja environment over `templates/` |
 | `templates/` | Page templates and CSS (Tailwind + daisyUI, `style.css` built by `pnpm run build:css` and committed) |
 | `tests/fixtures/<name>/` | Synthetic GTFS feeds as text files, zipped by `fixture_zip` |
-| `cli.py` | `cape-flier build`, `dump` and `serve`; the only place that downloads or writes files |
+| `cli.py` | `cape-flier build`, `dump`, `sizes` and `serve`; downloads and writes files locally |
+| `pipeline/` | Dagster code location (a partition per site) in geometry-car's instance: download, build, upload changed files to the bucket, rewrite the root, Gatus heartbeat |
 
 ## Rules
 

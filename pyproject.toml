@@ -11,12 +11,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# dagster pinned to geometry-car's: this is a code location in its instance.
 pipeline = [
-    "dagster>=1.9",
-    "dagster-webserver>=1.9",
-    "dagster-postgres>=0.25",
+    "boto3>=1.35",
+    "dagster==1.13.24",
+    "dagster-postgres==0.29.24",
     "httpx>=0.27",
-    "railroad-club",
 ]
 png = [
     "pillow>=11.0",
@@ -29,12 +29,10 @@ cape-flier = "cape_flier.cli:main"
 Homepage = "https://sites.gtfs.zone"
 Source = "https://github.com/gtfs-zone/cape-flier"
 
-[tool.uv.sources]
-railroad-club = { git = "https://git.kcfam.us/gtfs.zone/railroad-club.git" }
-
 [dependency-groups]
 dev = [
     "commitizen",
+    "dagster-webserver==1.13.24",
     "pre-commit",
     "pytest>=8.0",
     "ruff",

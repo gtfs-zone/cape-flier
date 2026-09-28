@@ -10,6 +10,9 @@ Basemap = Literal["none", "stadia-toner"]
 TimeFormat = Literal["12h", "24h"]
 Timepoints = Literal["auto", "all", "timepoint-flag"]
 
+FEEDS_URL = "https://data.gtfs.zone/feeds.json"
+USER_AGENT = "cape-flier (+https://sites.gtfs.zone)"
+
 SLUG_PATTERN = r"^[a-z0-9]+(-[a-z0-9]+)*$"
 
 

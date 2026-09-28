@@ -1,10 +1,11 @@
+import json
 import re
 from datetime import date
 
 import pytest
 from conftest import fixture_files, fixture_zip, make_zip
 
-from cape_flier.build import build_site
+from cape_flier.build import build_root, build_site
 from cape_flier.config import Site
 
 MONDAY = date(2026, 10, 5)
@@ -18,7 +19,13 @@ def build(name: str, **options) -> dict[str, str]:
 
 def test_site_files():
     files = build("branching", title="Test & Co")
-    assert set(files) == {"index.html", "4/index.html", "sitemap.xml", "style.css"}
+    assert set(files) == {
+        "index.html",
+        "4/index.html",
+        "site.json",
+        "sitemap.xml",
+        "style.css",
+    }
     home = files["index.html"]
     assert "Test &amp; Co</h1>" in home
     assert 'href="4/">' in home
@@ -57,7 +64,13 @@ def test_site_with_brand_and_basemap():
         basemap="stadia-toner",
         brand_color="0E4C92",
     )
-    assert set(files) == {"index.html", "4/index.html", "sitemap.xml", "style.css"}
+    assert set(files) == {
+        "index.html",
+        "4/index.html",
+        "site.json",
+        "sitemap.xml",
+        "style.css",
+    }
     home = files["index.html"]
     assert '<link rel="stylesheet" href="style.css">' in home
     assert "--color-primary: #0E4C92; --color-primary-content: #FFFFFF;" in home
@@ -108,3 +121,36 @@ def test_arrival_and_departure_rows_on_dwells():
     assert '<tr class="dp"><th scope="row"><small>dp</small></th>' in page
     assert "<td>8:10</td>" in page and "<td>8:15</td>" in page
     assert "ar: arrives, dp: departs." in page
+
+
+def test_site_json():
+    summary = json.loads(build("branching", title="Test & Co")["site.json"])
+    assert summary == {
+        "slug": "test",
+        "title": "Test & Co",
+        "routes": 1,
+        "valid_through": summary["valid_through"],
+        "generated": "2026-10-05",
+    }
+
+
+def test_build_root():
+    summaries = [
+        {"slug": "b", "title": "bravo", "routes": 1, "valid_through": None},
+        {"slug": "a", "title": "Alpha", "routes": 2, "valid_through": "2026-12-01"},
+    ]
+    files = {k: v.decode() for k, v in build_root(summaries, MONDAY).items()}
+    assert set(files) == {
+        "index.html",
+        "error.html",
+        "style.css",
+        "sitemap.xml",
+        "robots.txt",
+    }
+    home = files["index.html"]
+    assert home.index('href="a/"') < home.index('href="b/"')
+    assert "2 routes, valid through December 1, 2026" in home
+    assert '<link rel="stylesheet" href="/style.css">' in files["error.html"]
+    assert "<loc>https://sites.gtfs.zone/a/sitemap.xml</loc>" in files["sitemap.xml"]
+    assert "Sitemap: https://sites.gtfs.zone/sitemap.xml" in files["robots.txt"]
+    assert summaries[1]["valid_through"] == "2026-12-01"

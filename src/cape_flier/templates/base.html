@@ -31,8 +31,10 @@
 {% block main %}{% endblock %}
 </main>
 <footer class="mx-auto max-w-4xl space-y-1 px-4 pb-8 text-sm text-base-content/70">
+{% block footer %}
 <p>Generated {{ generated.strftime("%b") }} {{ generated.day }}, {{ generated.year }} from the agency's GTFS feed. Check with the agency before you travel.</p>
 <p><a class="link" href="{{ root }}../">sites.gtfs.zone</a></p>
+{% endblock %}
 </footer>
 </body>
 </html>

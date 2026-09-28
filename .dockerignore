@@ -1,0 +1,6 @@
+# Only the package, its dependency manifests and the site list belong in the build context.
+*
+!pyproject.toml
+!uv.lock
+!sites.yaml
+!src
