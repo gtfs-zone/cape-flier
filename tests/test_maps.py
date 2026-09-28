@@ -107,17 +107,52 @@ def build(files: dict[str, str], **options) -> dict[str, str]:
 
 def test_maps_from_stop_sequences_without_shapes():
     files = build(fixture_files("branching"))
-    assert '<svg class="map"' in files["index.html"]
+    assert '<div class="map" style="aspect-ratio:600/' in files["index.html"]
     route = files["4/index.html"]
-    assert '<svg class="map"' in route
+    assert '<svg class="over"' in route and '<p class="cap" hidden>' in route
     assert ">Alpha</text>" in route
 
 
-def test_bus_system_map_has_no_labels():
+def labels(html: str) -> set[str]:
+    return set(re.findall(r'<text x="[^"]*" y="[^"]*"[^>]*>([^<]+)</text>', html))
+
+
+def captions(html: str) -> set[str]:
+    return set(re.findall(r'data-cap="([^"]+)"', html))
+
+
+def test_maps_label_trip_ends_and_caption_every_stop():
+    files = build(fixture_files("branching"))
+    # Charlie is where back_short ends; Bravo, Echo and Foxtrot are passed through.
+    assert labels(files["4/index.html"]) == {"Alpha", "Charlie", "Delta", "Golf"}
+    assert labels(files["index.html"]) == {"Alpha", "Charlie", "Delta", "Golf"}
+    route_caps = {"Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot", "Golf"}
+    assert captions(files["4/index.html"]) == route_caps
+    assert captions(files["index.html"]) == {f"{c} - 4" for c in route_caps} | {
+        "4 Forks"
+    }
+
+
+def test_system_map_stops_link_their_routes():
+    files = build(fixture_files("branching"))
+    assert (
+        '<g class="pin" data-cap="Bravo - 4" data-routes="4/">' in files["index.html"]
+    )
+    assert "data-routes" not in files["4/index.html"]
+
+
+def test_rare_short_turns_get_no_label():
     files = fixture_files("branching")
-    assert "<text" not in build(files)["index.html"]
-    files["routes.txt"] = files["routes.txt"].replace("Forks,3", "Forks,2")
-    assert ">Alpha</text>" in build(files)["index.html"]
+    # 20 more full northbound trips put back_short's one end under the 5% share.
+    times = [
+        f"n{i},07:{i:02d}:00,07:{i:02d}:00,{s},{k}"
+        for i in range(20)
+        for k, s in enumerate("ABCD", 1)
+    ]
+    trips = [f"R,DAILY,n{i},North,0" for i in range(20)]
+    files["stop_times.txt"] = "\n".join([files["stop_times.txt"].rstrip(), *times])
+    files["trips.txt"] = "\n".join([files["trips.txt"].rstrip(), *trips])
+    assert "Charlie" not in labels(build(files)["4/index.html"])
 
 
 def test_maps_use_shapes_when_present():
@@ -140,8 +175,8 @@ def test_maps_use_shapes_when_present():
 
 def test_map_none_leaves_maps_out():
     files = build(fixture_files("branching"), map="none")
-    assert "<svg class=" not in files["index.html"]
-    assert "<svg class=" not in files["4/index.html"]
+    assert '<svg class="over"' not in files["index.html"]
+    assert '<svg class="over"' not in files["4/index.html"]
 
 
 def test_tiles_cover_the_map_box():
@@ -203,5 +238,6 @@ def test_watercolor_tiles_are_plain_jpg_capped_at_zoom_16():
 def test_line_with_href_is_a_link():
     path = (((42.0, -73.0), (42.1, -73.1)),)
     html = str(render_map("Map", [Line("R", None, path, "r/")], []))
-    assert '<a href="r/"><title>R</title>' in html and html.count("</a>") == 1
+    assert '<a href="r/" aria-label="R" data-cap="R">' in html
+    assert html.count("</a>") == 1
     assert "<a " not in str(render_map("Map", [Line("R", None, path)], []))

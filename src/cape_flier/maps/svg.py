@@ -12,6 +12,7 @@ from markupsafe import Markup, escape
 from cape_flier.config import Basemap, TileStyle
 from cape_flier.gtfs.reader import Feed
 from cape_flier.pages import contrast
+from cape_flier.strip import endpoint_threshold
 from cape_flier.timetable import Timetable
 
 # viewBox width; the height follows the map's shape within these ratios.
@@ -21,13 +22,16 @@ MAX_RATIO = 1.2
 PAD = 16
 # Douglas-Peucker tolerance in viewBox units.
 TOLERANCE = 1.0
-FONT_SIZE = 22
-# Average glyph width of the system font stack as a share of the font size.
-GLYPH = 0.56
+FONT_SIZE = 20
+# Average glyph width of the medium-weight system font stack as a share of
+# the font size.
+GLYPH = 0.58
 DOT = 5
 # Side of the grid cells used to count how much line a label would cover.
 CELL = 6
 MAJOR_DOT = 7
+# Radius of the invisible circle that takes hovers and taps on a dot.
+HIT = 14
 # Route colors closer than this to the page background are drawn in ink.
 MIN_LINE_CONTRAST = 1.6
 LIGHT_BG = "FFFFFF"
@@ -111,13 +115,18 @@ class Line:
 
 @dataclass(frozen=True, slots=True)
 class Mark:
-    """A labeled stop; major marks get a bigger dot and are labeled first."""
+    """A stop dot with a caption shown on hover; major marks get a bigger dot,
+    end marks a label, routes are listed in the caption, and hrefs are the
+    lines of those routes, highlighted on hover."""
 
     lat: float
     lon: float
     label: str
     major: bool = False
     rank: int = 0
+    end: bool = False
+    routes: tuple[str, ...] = ()
+    hrefs: tuple[str, ...] = ()
 
 
 def mercator(lat: float, lon: float) -> Point:
@@ -394,25 +403,27 @@ def render_map(
     lines: Sequence[Line],
     marks: Sequence[Mark],
     basemap: Basemap = "none",
-    labels: bool = True,
 ) -> Markup:
-    """An inline <svg> of the lines with their marked stops, empty when no
-    geometry; with a basemap, the svg sits over tiles in a `.map` box."""
+    """An inline <svg> of the lines with their marked stops in a `.map` box,
+    over tiles when there is a basemap, empty when no geometry. Stops and
+    linked lines carry `data-cap`, which map.html's script shows in `.cap`;
+    stops also carry `data-routes`, the hrefs of the lines it highlights and,
+    when there is only one, opens on click."""
     lines = [line for line in lines if line.paths]
     if not lines:
         return Markup("")
     points = [p for line in lines for path in line.paths for p in path]
     project = Projection(points + [(m.lat, m.lon) for m in marks])
 
-    parts = []
-    if basemap != "none":
-        parts.append(
-            f'<div class="map basemap" style="aspect-ratio:{WIDTH}/{project.height}">'
-            + tile_layer(project, basemap)
-        )
+    tiled = basemap != "none"
+    parts = [
+        f'<div class="map{" basemap" if tiled else ""}"'
+        f' style="aspect-ratio:{WIDTH}/{project.height}">'
+    ]
+    if tiled:
+        parts.append(tile_layer(project, basemap))
     parts.append(
-        f'<svg class="{"over" if basemap != "none" else "map"}"'
-        f' viewBox="0 0 {WIDTH} {project.height}" role="img"'
+        f'<svg class="over" viewBox="0 0 {WIDTH} {project.height}" role="img"'
         f' aria-label="{escape(title)}">'
     )
     drawn = [
@@ -424,17 +435,24 @@ def render_map(
         data = " ".join(path_data(path) for path in paths)
         stroke = f' stroke="#{line.color}"' if line.color else ""
         css = line_class(line.color)
-        tag, attrs = ("a", f' href="{escape(line.href)}"') if line.href else ("g", "")
+        title = escape(line.title)
+        tag, attrs = (
+            (
+                "a",
+                f' href="{escape(line.href)}" aria-label="{title}" data-cap="{title}"',
+            )
+            if line.href
+            else ("g", "")
+        )
         parts.append(
-            f"<{tag}{attrs}><title>{escape(line.title)}</title>"
-            f'<path class="case" d="{data}"/>'
+            f'<{tag}{attrs}><path class="case" d="{data}"/>'
             f'<path class="line{" " + css if css else ""}"{stroke} d="{data}"/></{tag}>'
         )
 
     # One dot per name and per spot, keeping the most important mark.
     dots: list[tuple[float, float, Mark]] = []
     seen: set[str] = set()
-    for mark in sorted(marks, key=lambda m: (not m.major, -m.rank)):
+    for mark in sorted(marks, key=lambda m: (not m.end, not m.major, -m.rank)):
         x, y = project(mark.lat, mark.lon)
         near = any(math.hypot(x - dx, y - dy) < 2 * DOT for dx, dy, _ in dots)
         if mark.label in seen or near:
@@ -443,13 +461,20 @@ def render_map(
         dots.append((x, y, mark))
     for x, y, mark in dots:
         r = MAJOR_DOT if mark.major else DOT
-        parts.append(f'<circle class="stop" cx="{round(x)}" cy="{round(y)}" r="{r}"/>')
-    placed = (
-        place_labels(
-            dots, project.height, line_cells(p for paths in drawn for p in paths)
+        cx, cy = round(x), round(y)
+        text = " - ".join(
+            [mark.label, ", ".join(mark.routes)] if mark.routes else [mark.label]
         )
-        if labels
-        else []
+        hrefs = f' data-routes="{escape(" ".join(mark.hrefs))}"' if mark.hrefs else ""
+        parts.append(
+            f'<g class="pin" data-cap="{escape(text)}"{hrefs}>'
+            f'<circle class="hit" cx="{cx}" cy="{cy}" r="{HIT}"/>'
+            f'<circle class="stop" cx="{cx}" cy="{cy}" r="{r}"/></g>'
+        )
+    placed = place_labels(
+        [dot for dot in dots if dot[2].end],
+        project.height,
+        line_cells(p for paths in drawn for p in paths),
     )
     for box, side, label in placed:
         x = {"right": box[0], "left": box[2]}.get(side, (box[0] + box[2]) / 2)
@@ -460,9 +485,9 @@ def render_map(
         parts.append(
             f'<text x="{round(x)}" y="{round(y)}"{attr}>{escape(label)}</text>'
         )
-    parts.append("</svg>")
-    if basemap != "none":
-        parts.append(f'</div><p class="attribution">{attribution(basemap)}</p>')
+    parts.append('</svg><p class="cap" hidden></p></div>')
+    if tiled:
+        parts.append(f'<p class="attribution">{attribution(basemap)}</p>')
     return Markup("".join(parts))
 
 
@@ -502,27 +527,45 @@ def route_line(
 
 
 def timepoint_stops(tables: Sequence[Timetable]) -> tuple[list[str], set[str]]:
-    """Timepoint stop ids in table order, and the tables' end stops."""
+    """Timepoint stop ids in table order, and the timepoints where enough
+    trips start or end to count as an endpoint."""
     stops: dict[str, None] = {}
-    ends: set[str] = set()
+    starts: Counter[str] = Counter()
+    ends: Counter[str] = Counter()
+    trips = 0
     for table in tables:
-        rows = [row for row in table.rows if row.timepoint]
-        stops.update(dict.fromkeys(row.stop_id for row in rows))
-        if rows:
-            ends |= {rows[0].stop_id, rows[-1].stop_id}
-    return list(stops), ends
+        rows = [(k, row.stop_id) for k, row in enumerate(table.rows) if row.timepoint]
+        stops.update(dict.fromkeys(stop_id for _, stop_id in rows))
+        for column in table.columns:
+            served = [stop_id for k, stop_id in rows if column.cells[k] is not None]
+            if served:
+                trips += 1
+                starts[served[0]] += 1
+                ends[served[-1]] += 1
+    threshold = endpoint_threshold(trips)
+    endpoints = {s for s in stops if max(starts[s], ends[s]) >= threshold}
+    return list(stops), endpoints
 
 
-def mark(feed: Feed, stop_id: str, major: bool, rank: int = 0) -> Mark | None:
+def mark(
+    feed: Feed,
+    stop_id: str,
+    major: bool,
+    rank: int = 0,
+    end: bool = False,
+    routes: tuple[str, ...] = (),
+    hrefs: tuple[str, ...] = (),
+) -> Mark | None:
     stop = feed.stops.get(stop_id)
     if stop is None or stop.lat is None or stop.lon is None:
         return None
-    return Mark(stop.lat, stop.lon, " ".join(stop.name.split()), major, rank)
+    name = " ".join(stop.name.split())
+    return Mark(stop.lat, stop.lon, name, major, rank, end, routes, hrefs)
 
 
 def route_marks(feed: Feed, tables: Sequence[Timetable]) -> list[Mark]:
     stops, ends = timepoint_stops(tables)
-    return [m for s in stops if (m := mark(feed, s, s in ends))]
+    return [m for s in stops if (m := mark(feed, s, s in ends, end=s in ends))]
 
 
 def route_map(
@@ -532,29 +575,43 @@ def route_map(
     tables: Sequence[Timetable],
     basemap: Basemap = "none",
 ) -> Markup:
-    """One route with its timepoints labeled and its ends emphasized."""
+    """One route with its ends labeled and its other timepoints captioned."""
     line = route_line(feed, title, color, trip_ids(tables))
     return render_map(f"Map of {title}", [line], route_marks(feed, tables), basemap)
 
 
+SystemRoute = tuple[str, str, str | None, list[Timetable], str | None]
+
+
 def system_lines(
-    feed: Feed, routes: Sequence[tuple[str, str | None, list[Timetable], str | None]]
+    feed: Feed, routes: Sequence[SystemRoute]
 ) -> tuple[list[Line], list[Mark]]:
-    """Every route's line, linked to its href, and its timepoints as marks;
-    stops on two or more routes or at a route's end are major, ranked by
-    routes served."""
+    """Every route's line, linked to its href, and its timepoints as marks
+    listing the badges and hrefs of the routes serving them; stops on two or more
+    routes or at a route's end are major, ranked by routes served."""
     lines = []
-    served: Counter[str] = Counter()
+    served: dict[str, list[tuple[str, str | None]]] = {}
     ends: set[str] = set()
-    for name, color, tables, href in routes:
+    for name, badge, color, tables, href in routes:
         lines.append(route_line(feed, name, color, trip_ids(tables), href))
         stops, route_ends = timepoint_stops(tables)
-        served.update(stops)
+        for stop_id in stops:
+            served.setdefault(stop_id, []).append((badge, href))
         ends |= route_ends
     marks = [
         m
-        for stop_id, count in served.items()
-        if (m := mark(feed, stop_id, count > 1 or stop_id in ends, count))
+        for stop_id, routes in served.items()
+        if (
+            m := mark(
+                feed,
+                stop_id,
+                len(routes) > 1 or stop_id in ends,
+                len(routes),
+                stop_id in ends,
+                tuple(dict.fromkeys(badge for badge, _ in routes)),
+                tuple(dict.fromkeys(href for _, href in routes if href)),
+            )
+        )
     ]
     return lines, marks
 
@@ -562,10 +619,9 @@ def system_lines(
 def system_map(
     feed: Feed,
     title: str,
-    routes: Sequence[tuple[str, str | None, list[Timetable], str | None]],
+    routes: Sequence[SystemRoute],
     basemap: Basemap = "none",
-    labels: bool = True,
 ) -> Markup:
-    """Every route with its timepoints, labels going to the busiest stops."""
+    """Every route with its ends labeled and its timepoints captioned."""
     lines, marks = system_lines(feed, routes)
-    return render_map(f"Map of {title}", lines, marks, basemap, labels)
+    return render_map(f"Map of {title}", lines, marks, basemap)

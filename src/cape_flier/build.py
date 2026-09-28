@@ -40,11 +40,6 @@ def page_digest(body: bytes) -> str:
     return hashlib.sha256(GENERATED.sub(b"", body)).hexdigest()
 
 
-def is_bus(route_type: int) -> bool:
-    """Bus and trolleybus, in basic and extended GTFS route types."""
-    return route_type in (3, 11) or 700 <= route_type < 800 or route_type == 800
-
-
 def site_feed(zip_bytes: bytes, site: Site) -> Feed:
     """The feed with only the routes the site's filter accepts."""
     return read_feed(
@@ -113,13 +108,11 @@ def build_site(
     through = valid_through(feed, today)
     maps = site.map == "svg"
     system_routes = [
-        (view.title, view.line_color, tables, f"{view.slug}/")
+        (view.title, view.badge, view.line_color, tables, f"{view.slug}/")
         for view, (_, tables) in zip(routes, timetables, strict=True)
     ]
-    # Bus systems have too many stops to label legibly at system scale.
-    buses = all(is_bus(route.route_type) for route, _ in timetables)
     home_map = (
-        system_map(feed, common["site_title"], system_routes, site.basemap, not buses)
+        system_map(feed, common["site_title"], system_routes, site.basemap)
         if maps
         else ""
     )

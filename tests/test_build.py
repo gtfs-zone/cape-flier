@@ -88,7 +88,7 @@ def test_site_with_brand_and_basemap():
     assert "stamen_toner/" in page
     assert '<link rel="icon" type="image/svg+xml" href="../logo.svg">' in page
     assert 'href="../../" aria-label="sites.gtfs.zone"' in page
-    assert '<a href="4/"><title>' in home
+    assert '<a href="4/" aria-label="4 Forks" data-cap="4 Forks">' in home
     rows = re.findall(r'<th scope="row">.*?</th>', page, re.S)
     assert rows and all('<span class="dot' in row for row in rows)
     assert all(
