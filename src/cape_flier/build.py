@@ -4,6 +4,7 @@ import io
 import json
 import zipfile
 from datetime import date
+from importlib.metadata import version
 
 from cape_flier.config import Site
 from cape_flier.gtfs.reader import Feed, Route, read_feed
@@ -94,7 +95,7 @@ def build_site(
     through = valid_through(feed, today)
     maps = site.map == "svg"
     system_routes = [
-        (view.title, view.line_color, tables)
+        (view.title, view.line_color, tables, f"{view.slug}/")
         for view, (_, tables) in zip(routes, timetables, strict=True)
     ]
     # Bus systems have too many stops to label legibly at system scale.
@@ -138,6 +139,7 @@ def build_site(
         generated=today.isoformat(),
     )
     files["style.css"] = asset("style.css")
+    files["logo.svg"] = asset("logo.svg")
     files["sitemap.xml"] = render(
         "sitemap.xml",
         base_url=base_url,
@@ -168,11 +170,13 @@ def build_root(summaries: list[dict], today: date) -> dict[str, bytes]:
         "base_url": f"{BASE_URL}/",
         "generated": today,
         "brand": None,
+        "version": version("cape-flier"),
     }
     return {
         "index.html": render("root.html", **common, sites=sites, root=""),
         "error.html": render("error.html", **common, root="/"),
         "style.css": asset("style.css"),
+        "logo.svg": asset("logo.svg"),
         "sitemap.xml": render(
             "sitemap-index.xml",
             sitemaps=[f"{BASE_URL}/{s['slug']}/sitemap.xml" for s in sites],

@@ -16,6 +16,7 @@
 <link rel="canonical" href="{% block canonical %}{{ base_url }}{% endblock %}">
 <meta name="color-scheme" content="light dark">
 {% if brand %}<meta name="theme-color" content="#{{ brand[0] }}">{% endif %}
+<link rel="icon" type="image/svg+xml" href="{{ root }}logo.svg">
 <link rel="stylesheet" href="{{ root }}style.css">
 {% if brand %}
 <style>:root { --color-primary: #{{ brand[0] }}; --color-primary-content: #{{ brand[1] }}; }</style>
@@ -23,8 +24,11 @@
 </head>
 <body class="min-h-screen bg-base-200 text-base-content">
 <header class="navbar {{ 'bg-primary text-primary-content' if brand else 'bg-base-100' }} shadow-sm">
-<div class="mx-auto w-full max-w-4xl px-2">
-<a class="btn btn-ghost h-auto min-h-11 py-2 text-left text-lg" href="{{ root or './' }}">{{ site_title }}</a>
+<div class="mx-auto flex w-full max-w-4xl items-center gap-2 px-2">
+{% block brand %}
+<a class="btn btn-ghost h-auto min-h-11 flex-1 justify-start py-2 text-left text-lg" href="{{ root or './' }}">{{ site_title }}</a>
+<a class="btn btn-ghost btn-square h-11 w-11 shrink-0" href="{{ root }}../" aria-label="sites.gtfs.zone"><img class="w-8 rounded-lg" src="{{ root }}logo.svg" alt=""></a>
+{% endblock %}
 </div>
 </header>
 <main class="mx-auto max-w-4xl space-y-6 px-4 py-6">
@@ -35,6 +39,7 @@
 <p>Generated {{ generated.strftime("%b") }} {{ generated.day }}, {{ generated.year }} from the agency's GTFS feed. Check with the agency before you travel.</p>
 <p><a class="link" href="{{ root }}../">sites.gtfs.zone</a></p>
 {% endblock %}
+<p>More GTFS tools at <a class="link" href="https://gtfs.zone" target="_blank" rel="noopener">gtfs.zone</a></p>
 </footer>
 </body>
 </html>

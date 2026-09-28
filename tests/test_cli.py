@@ -46,3 +46,18 @@ def test_dump_prints_timetables(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "# 1" in out
     assert "11:40p" in out and "12:10a+1" not in out
+
+
+def test_build_clears_old_files_and_writes_root(tmp_path):
+    config = tmp_path / "sites.yaml"
+    config.write_text("sites: [{slug: local, url: 'https://example.org/g.zip'}]")
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    (cache / "local.zip").write_bytes(fixture_zip("overnight"))
+    out = tmp_path / "dist"
+    (out / "gone").mkdir(parents=True)
+    (out / "local" / "old").mkdir(parents=True)
+    main(["build", "--out", str(out), "--config", str(config), "--cache", str(cache)])
+    assert not (out / "gone").exists() and not (out / "local" / "old").exists()
+    assert b'href="local/"' in (out / "index.html").read_bytes()
+    assert (out / "error.html").exists() and (out / "logo.svg").exists()

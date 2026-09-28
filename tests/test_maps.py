@@ -2,12 +2,14 @@ import math
 import re
 from datetime import date
 from itertools import pairwise
+from typing import get_args
 
 from conftest import fixture_files, make_zip
 
 from cape_flier.build import build_site
-from cape_flier.config import Site
+from cape_flier.config import BasemapPair, Site, TileStyle
 from cape_flier.maps.svg import (
+    TILE_SOURCES,
     WIDTH,
     Line,
     Mark,
@@ -168,10 +170,38 @@ def test_tile_of_a_known_point():
 
 def test_basemap_wraps_svg_with_tiles_and_attribution():
     line = Line("R", "FF0000", (((42.0, -73.0), (42.1, -73.1)),))
-    html = str(render_map("Map", [line], [], "stadia-toner"))
+    html = str(render_map("Map", [line], [], "stadia-toner-lite"))
     assert html.startswith('<div class="map basemap" style="aspect-ratio:600/')
     assert 'loading="lazy"' in html
-    assert "stamen_toner_lite" in html and "alidade_smooth_dark" in html
+    assert "/stamen_toner_lite/" in html and "@2x.png" in html
+    assert "<picture>" not in html
     assert '<svg class="over"' in html
-    assert "OpenStreetMap" in html
+    assert "Stamen Design" in html and "OpenStreetMap" in html
     assert "<picture>" not in str(render_map("Map", [line], []))
+
+
+def test_basemap_pair_switches_on_color_scheme():
+    line = Line("R", "FF0000", (((42.0, -73.0), (42.1, -73.1)),))
+    pair = BasemapPair(light="stadia-alidade-smooth", dark="stadia-toner-dark")
+    html = str(render_map("Map", [line], [], pair))
+    assert "<picture>" in html
+    assert "/alidade_smooth/" in html and "/stamen_toner_dark/" in html
+    assert html.count("Stadia Maps") == 1 and "Stamen Design" in html
+
+
+def test_every_tile_style_has_a_source():
+    assert set(TILE_SOURCES) == set(get_args(TileStyle))
+
+
+def test_watercolor_tiles_are_plain_jpg_capped_at_zoom_16():
+    line = Line("R", None, (((42.0, -73.0), (42.0001, -73.0001)),))
+    html = str(render_map("Map", [line], [], "stadia-watercolor"))
+    assert "/stamen_watercolor/16/" in html and ".jpg" in html and "@2x" not in html
+    assert "CNES" in str(render_map("Map", [line], [], "stadia-alidade-satellite"))
+
+
+def test_line_with_href_is_a_link():
+    path = (((42.0, -73.0), (42.1, -73.1)),)
+    html = str(render_map("Map", [Line("R", None, path, "r/")], []))
+    assert '<a href="r/"><title>R</title>' in html and html.count("</a>") == 1
+    assert "<a " not in str(render_map("Map", [Line("R", None, path)], []))

@@ -3,14 +3,14 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from cape_flier.config import RouteFilter, load_config
+from cape_flier.config import BasemapPair, RouteFilter, load_config
 
 REPO_CONFIG = Path(__file__).parent.parent / "sites.yaml"
 
 
 def test_repo_config_loads():
     config = load_config(REPO_CONFIG.read_text())
-    assert config.site("columbia-county").basemap == "stadia-toner"
+    assert config.site("columbia-county").basemap == "stadia-toner-dark"
     assert config.site("amtrak").brand_color == "00537E"
 
 
@@ -28,6 +28,16 @@ sites:
     assert config.site("b").time_format == "12h"
 
 
+def test_basemap_pair():
+    config = load_config(
+        "sites: [{slug: a, url: u, basemap:"
+        " {light: stadia-toner-lite, dark: stadia-toner-dark}}]"
+    )
+    assert config.site("a").basemap == BasemapPair(
+        light="stadia-toner-lite", dark="stadia-toner-dark"
+    )
+
+
 @pytest.mark.parametrize(
     "text",
     [
@@ -41,6 +51,7 @@ sites:
         "sites: [{slug: a, url: u, orientation: trips-down}]",
         "sites: [{slug: a, url: u, brand_color: red}]",
         "sites: [{slug: a, url: u, basemap: osm}]",
+        "sites: [{slug: a, url: u, basemap: {light: stadia-toner-lite}}]",
         "sites: [{slug: a, url: u, interactive_map: true}]",
     ],
 )

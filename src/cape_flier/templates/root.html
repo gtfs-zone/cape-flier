@@ -1,6 +1,12 @@
 {% extends "base.html" %}
 {% block title %}Transit timetables - sites.gtfs.zone{% endblock %}
 {% block description %}Bus and train timetables for {{ sites | length }} transit agencies, generated from their GTFS feeds.{% endblock %}
+{% block brand %}
+<a class="btn btn-ghost h-auto min-h-11 gap-3 py-2" href="./">
+<img class="w-8 rounded-lg" src="logo.svg" alt="">
+<span class="text-xl font-bold"><span class="text-primary">sites</span>.gtfs.zone<sup class="ml-1 text-xs font-normal opacity-50">v{{ version }}</sup></span>
+</a>
+{% endblock %}
 {% block main %}
 <h1 class="text-3xl font-bold">Transit timetables</h1>
 <ul class="list rounded-box bg-base-100 shadow-sm">
@@ -14,5 +20,5 @@
 </ul>
 {% endblock %}
 {% block footer %}
-<p>Generated daily from each agency's GTFS feed by <a class="link" href="https://github.com/gtfs-zone/cape-flier">cape-flier</a>. Check with the agency before you travel.</p>
+<p>Generated daily from each agency's GTFS feed by <a class="link" href="https://github.com/gtfs-zone/cape-flier" target="_blank" rel="noopener">cape-flier</a>. Check with the agency before you travel.</p>
 {% endblock %}

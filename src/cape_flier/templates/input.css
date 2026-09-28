@@ -77,6 +77,13 @@
 .map.basemap { position: relative; overflow: hidden; border-radius: var(--radius-box); }
 .tiles img { position: absolute; max-width: none; opacity: .75; }
 .map .over { position: absolute; inset: 0; width: 100%; height: 100%; }
+/* Route lines that link to their route page */
+.map a path { pointer-events: stroke; cursor: pointer; transition: stroke-width .15s; }
+.map a { transition: opacity .15s; outline: none; }
+.map a:is(:hover, :focus-visible) .case { stroke-width: 11px; }
+.map a:is(:hover, :focus-visible) .line { stroke-width: 7px; }
+.map:has(a:is(:hover, :focus-visible)) a:not(:hover, :focus-visible) { opacity: .35; }
+.map :is(text, .stop) { pointer-events: none; }
 .attribution { font-size: .75rem; opacity: .7; text-align: center; margin-top: .25rem; }
 @media (prefers-color-scheme: light) { .map .pale { stroke: var(--color-base-content); } }
 @media (prefers-color-scheme: dark) { .map .deep { stroke: var(--color-base-content); } }

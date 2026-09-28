@@ -6,7 +6,22 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 MapKind = Literal["svg", "png", "none"]
-Basemap = Literal["none", "stadia-toner"]
+TileStyle = Literal[
+    "stadia-alidade-smooth",
+    "stadia-alidade-smooth-dark",
+    "stadia-alidade-bright",
+    "stadia-alidade-satellite",
+    "stadia-outdoors",
+    "stadia-osm-bright",
+    "stadia-toner",
+    "stadia-toner-lite",
+    "stadia-toner-dark",
+    "stadia-toner-blacklite",
+    "stadia-toner-background",
+    "stadia-terrain",
+    "stadia-terrain-background",
+    "stadia-watercolor",
+]
 TimeFormat = Literal["12h", "24h"]
 Timepoints = Literal["auto", "all", "timepoint-flag"]
 
@@ -18,6 +33,16 @@ SLUG_PATTERN = r"^[a-z0-9]+(-[a-z0-9]+)*$"
 
 class Strict(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class BasemapPair(Strict):
+    """Tile styles for the light and dark color schemes."""
+
+    light: TileStyle
+    dark: TileStyle
+
+
+Basemap = Literal["none"] | TileStyle | BasemapPair
 
 
 class Options(Strict):

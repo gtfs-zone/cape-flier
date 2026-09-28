@@ -9,7 +9,7 @@ from itertools import pairwise
 
 from markupsafe import Markup, escape
 
-from cape_flier.config import Basemap
+from cape_flier.config import Basemap, TileStyle
 from cape_flier.gtfs.reader import Feed
 from cape_flier.pages import contrast
 from cape_flier.timetable import Timetable
@@ -36,22 +36,64 @@ DARK_BG = "141414"
 DISPLAY_WIDTH = 512
 TILE_CSS = 256
 MAX_ZOOM = 18
-TILES = {
-    "stadia-toner": (
-        "https://tiles.stadiamaps.com/tiles/stamen_toner_lite/{z}/{x}/{y}@2x.png",
-        "https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}@2x.png",
+
+
+@dataclass(frozen=True, slots=True)
+class TileSource:
+    """A Stadia raster style: its tile URL and the credits it needs."""
+
+    style: str
+    credits: tuple[str, ...]
+    ext: str = "png"
+    retina: bool = True
+    max_zoom: int = MAX_ZOOM
+
+    def url(self, z: int, x: int, y: int) -> str:
+        scale = "@2x" if self.retina else ""
+        return (
+            f"https://tiles.stadiamaps.com/tiles/{self.style}"
+            f"/{z}/{x}/{y}{scale}.{self.ext}"
+        )
+
+
+STADIA = ("stadia", "openmaptiles", "osm")
+STAMEN = ("stadia", "stamen", "openmaptiles", "osm")
+TILE_SOURCES: dict[TileStyle, TileSource] = {
+    "stadia-alidade-smooth": TileSource("alidade_smooth", STADIA),
+    "stadia-alidade-smooth-dark": TileSource("alidade_smooth_dark", STADIA),
+    "stadia-alidade-bright": TileSource("alidade_bright", STADIA),
+    "stadia-alidade-satellite": TileSource(
+        "alidade_satellite", ("satellite", *STADIA), ext="jpg"
+    ),
+    "stadia-outdoors": TileSource("outdoors", STADIA),
+    "stadia-osm-bright": TileSource("osm_bright", STADIA),
+    "stadia-toner": TileSource("stamen_toner", STAMEN),
+    "stadia-toner-lite": TileSource("stamen_toner_lite", STAMEN),
+    "stadia-toner-dark": TileSource("stamen_toner_dark", STAMEN),
+    "stadia-toner-blacklite": TileSource("stamen_toner_blacklite", STAMEN),
+    "stadia-toner-background": TileSource("stamen_toner_background", STAMEN),
+    "stadia-terrain": TileSource("stamen_terrain", STAMEN),
+    "stadia-terrain-background": TileSource("stamen_terrain_background", STAMEN),
+    "stadia-watercolor": TileSource(
+        "stamen_watercolor",
+        ("stadia", "stamen", "osm"),
+        ext="jpg",
+        retina=False,
+        max_zoom=16,
     ),
 }
-ATTRIBUTION = (
-    '&copy; <a href="https://stadiamaps.com/" target="_blank" rel="noopener">'
-    "Stadia Maps</a> "
-    '&copy; <a href="https://stamen.com/" target="_blank" rel="noopener">'
-    "Stamen Design</a> "
-    '&copy; <a href="https://openmaptiles.org/" target="_blank" rel="noopener">'
-    "OpenMapTiles</a> "
-    '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank"'
-    ' rel="noopener">OpenStreetMap</a>'
-)
+CREDITS = {
+    "satellite": "&copy; CNES, Distribution Airbus DS, &copy; Airbus DS,"
+    " &copy; PlanetObserver (Contains Copernicus Data)",
+    "stadia": '&copy; <a href="https://stadiamaps.com/" target="_blank"'
+    ' rel="noopener">Stadia Maps</a>',
+    "stamen": '&copy; <a href="https://stamen.com/" target="_blank"'
+    ' rel="noopener">Stamen Design</a>',
+    "openmaptiles": '&copy; <a href="https://openmaptiles.org/" target="_blank"'
+    ' rel="noopener">OpenMapTiles</a>',
+    "osm": '&copy; <a href="https://www.openstreetmap.org/copyright"'
+    ' target="_blank" rel="noopener">OpenStreetMap</a>',
+}
 
 type Point = tuple[float, float]
 type Box = tuple[float, float, float, float]
@@ -59,11 +101,12 @@ type Box = tuple[float, float, float, float]
 
 @dataclass(frozen=True, slots=True)
 class Line:
-    """One route: its paths as (lat, lon) points."""
+    """One route: its paths as (lat, lon) points, linked to href if set."""
 
     title: str
     color: str | None
     paths: tuple[tuple[Point, ...], ...]
+    href: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -160,12 +203,12 @@ class Tile:
     height: float
 
 
-def tiles(project: Projection) -> list[Tile]:
+def tiles(project: Projection, max_zoom: int = MAX_ZOOM) -> list[Tile]:
     """Tiles covering the viewBox, at the zoom whose tiles show about
     TILE_CSS pixels wide when the map is DISPLAY_WIDTH pixels wide."""
     world = 2 * math.pi
     target = world * project.scale * DISPLAY_WIDTH / (WIDTH * TILE_CSS)
-    z = min(max(round(math.log2(target)), 0), MAX_ZOOM)
+    z = min(max(round(math.log2(target)), 0), max_zoom)
     count = 1 << z
     size = world / count
 
@@ -193,21 +236,38 @@ def tiles(project: Projection) -> list[Tile]:
     return result
 
 
+def tile_sources(basemap: Basemap) -> tuple[TileSource, TileSource]:
+    """The light and dark tile sources; a single style serves both."""
+    if isinstance(basemap, str):
+        return TILE_SOURCES[basemap], TILE_SOURCES[basemap]
+    return TILE_SOURCES[basemap.light], TILE_SOURCES[basemap.dark]
+
+
+def attribution(basemap: Basemap) -> str:
+    """Credits needed by either tile source, each once."""
+    keys = dict.fromkeys(key for s in tile_sources(basemap) for key in s.credits)
+    return " ".join(CREDITS[key] for key in keys)
+
+
 def tile_layer(project: Projection, basemap: Basemap) -> str:
-    """<picture> tiles, light by default and dark under a dark color scheme."""
-    light, dark = TILES[basemap]
+    """Tile images, as <picture> with a dark source when the styles differ."""
+    light, dark = tile_sources(basemap)
     parts = ['<div class="tiles" aria-hidden="true">']
-    for t in tiles(project):
+    for t in tiles(project, min(light.max_zoom, dark.max_zoom)):
         style = (
             f"left:{t.left:.3f}%;top:{t.top:.3f}%;"
             f"width:{t.width:.3f}%;height:{t.height:.3f}%"
         )
-        parts.append(
-            f'<picture><source media="(prefers-color-scheme: dark)"'
-            f' srcset="{dark.format(z=t.z, x=t.x, y=t.y)}">'
-            f'<img src="{light.format(z=t.z, x=t.x, y=t.y)}" alt=""'
-            f' loading="lazy" decoding="async" style="{style}"></picture>'
+        img = (
+            f'<img src="{light.url(t.z, t.x, t.y)}" alt=""'
+            f' loading="lazy" decoding="async" style="{style}">'
         )
+        if dark != light:
+            img = (
+                f'<picture><source media="(prefers-color-scheme: dark)"'
+                f' srcset="{dark.url(t.z, t.x, t.y)}">{img}</picture>'
+            )
+        parts.append(img)
     parts.append("</div>")
     return "".join(parts)
 
@@ -364,9 +424,11 @@ def render_map(
         data = " ".join(path_data(path) for path in paths)
         stroke = f' stroke="#{line.color}"' if line.color else ""
         css = line_class(line.color)
+        tag, attrs = ("a", f' href="{escape(line.href)}"') if line.href else ("g", "")
         parts.append(
-            f'<g><title>{escape(line.title)}</title><path class="case" d="{data}"/>'
-            f'<path class="line{" " + css if css else ""}"{stroke} d="{data}"/></g>'
+            f"<{tag}{attrs}><title>{escape(line.title)}</title>"
+            f'<path class="case" d="{data}"/>'
+            f'<path class="line{" " + css if css else ""}"{stroke} d="{data}"/></{tag}>'
         )
 
     # One dot per name and per spot, keeping the most important mark.
@@ -400,7 +462,7 @@ def render_map(
         )
     parts.append("</svg>")
     if basemap != "none":
-        parts.append(f'</div><p class="attribution">{ATTRIBUTION}</p>')
+        parts.append(f'</div><p class="attribution">{attribution(basemap)}</p>')
     return Markup("".join(parts))
 
 
@@ -409,7 +471,13 @@ def trip_ids(tables: Sequence[Timetable]) -> list[str]:
     return list(ids)
 
 
-def route_line(feed: Feed, title: str, color: str | None, ids: Sequence[str]) -> Line:
+def route_line(
+    feed: Feed,
+    title: str,
+    color: str | None,
+    ids: Sequence[str],
+    href: str | None = None,
+) -> Line:
     """The route's distinct shapes, or its stop sequences for trips without one."""
     shape_ids: dict[str, None] = {}
     sequences: dict[tuple[str, ...], None] = {}
@@ -430,7 +498,7 @@ def route_line(feed: Feed, title: str, color: str | None, ids: Sequence[str]) ->
         )
         if path:
             paths.append(path)
-    return Line(title=title, color=color, paths=tuple(p for p in paths if p))
+    return Line(title=title, color=color, paths=tuple(p for p in paths if p), href=href)
 
 
 def timepoint_stops(tables: Sequence[Timetable]) -> tuple[list[str], set[str]]:
@@ -470,15 +538,16 @@ def route_map(
 
 
 def system_lines(
-    feed: Feed, routes: Sequence[tuple[str, str | None, list[Timetable]]]
+    feed: Feed, routes: Sequence[tuple[str, str | None, list[Timetable], str | None]]
 ) -> tuple[list[Line], list[Mark]]:
-    """Every route's line, and its timepoints as marks; stops on two or more
-    routes or at a route's end are major, ranked by routes served."""
+    """Every route's line, linked to its href, and its timepoints as marks;
+    stops on two or more routes or at a route's end are major, ranked by
+    routes served."""
     lines = []
     served: Counter[str] = Counter()
     ends: set[str] = set()
-    for name, color, tables in routes:
-        lines.append(route_line(feed, name, color, trip_ids(tables)))
+    for name, color, tables, href in routes:
+        lines.append(route_line(feed, name, color, trip_ids(tables), href))
         stops, route_ends = timepoint_stops(tables)
         served.update(stops)
         ends |= route_ends
@@ -493,7 +562,7 @@ def system_lines(
 def system_map(
     feed: Feed,
     title: str,
-    routes: Sequence[tuple[str, str | None, list[Timetable]]],
+    routes: Sequence[tuple[str, str | None, list[Timetable], str | None]],
     basemap: Basemap = "none",
     labels: bool = True,
 ) -> Markup:

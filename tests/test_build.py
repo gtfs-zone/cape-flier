@@ -25,6 +25,7 @@ def test_site_files():
         "site.json",
         "sitemap.xml",
         "style.css",
+        "logo.svg",
     }
     home = files["index.html"]
     assert "Test &amp; Co</h1>" in home
@@ -70,6 +71,7 @@ def test_site_with_brand_and_basemap():
         "site.json",
         "sitemap.xml",
         "style.css",
+        "logo.svg",
     }
     home = files["index.html"]
     assert '<link rel="stylesheet" href="style.css">' in home
@@ -79,7 +81,10 @@ def test_site_with_brand_and_basemap():
     assert "<nav" not in page.split("<main", 1)[1]
     assert "<details" not in page
     assert '<section class="card bg-base-100 shadow-sm" id="' in page
-    assert "picture" in page
+    assert "stamen_toner/" in page
+    assert '<link rel="icon" type="image/svg+xml" href="../logo.svg">' in page
+    assert 'href="../../" aria-label="sites.gtfs.zone"' in page
+    assert '<a href="4/"><title>' in home
     rows = re.findall(r'<th scope="row">.*?</th>', page, re.S)
     assert rows and all('<span class="dot"' in row for row in rows)
     assert all(
@@ -144,12 +149,16 @@ def test_build_root():
         "index.html",
         "error.html",
         "style.css",
+        "logo.svg",
         "sitemap.xml",
         "robots.txt",
     }
     home = files["index.html"]
     assert home.index('href="a/"') < home.index('href="b/"')
     assert "2 routes, valid through December 1, 2026" in home
+    assert re.search(r"\.gtfs\.zone<sup[^>]*>v\d+\.\d+\.\d+</sup>", home)
+    assert 'href="https://gtfs.zone" target="_blank"' in home
+    assert 'cape-flier" target="_blank" rel="noopener">cape-flier</a>' in home
     assert '<link rel="stylesheet" href="/style.css">' in files["error.html"]
     assert "<loc>https://sites.gtfs.zone/a/sitemap.xml</loc>" in files["sitemap.xml"]
     assert "Sitemap: https://sites.gtfs.zone/sitemap.xml" in files["robots.txt"]

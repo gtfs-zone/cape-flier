@@ -16,3 +16,4 @@ dagster_home/
 
 CURRENT_PLAN.md
 node_modules/
+.cache/

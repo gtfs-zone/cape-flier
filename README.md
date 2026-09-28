@@ -10,7 +10,11 @@ needed to read a timetable.
 
 ```bash
 uv sync
-uv run cape-flier build --site columbia-county         # download the feed, write dist/columbia-county/
+uv run cape-flier dev                                   # build every site and the home page, serve, rebuild on changes
+uv run cape-flier dev --site columbia-county            # the same, one site only (faster rebuilds)
+uv run cape-flier dev --refresh                         # download the feeds again instead of using .cache/feeds/
+uv run cape-flier build                                 # clear dist/, build every site and the home page
+uv run cape-flier build --site columbia-county         # rebuild dist/columbia-county/ and the home page
 uv run cape-flier build --site columbia-county --zip feed.zip   # use a local zip
 uv run cape-flier serve                                 # serve dist/ on the LAN, port 8000
 uv run cape-flier sizes                                 # largest built pages, gzip and raw
@@ -31,7 +35,13 @@ and exactly one of `feed` or `url`, and may override any default:
 | `time_format` | `12h`, `24h` | `12h` |
 | `timepoints` | `auto`, `all`, `timepoint-flag` | `auto` |
 | `brand_color` | `RRGGBB` for the header and links | none |
-| `basemap` | `none`, `stadia-toner` (tiles under the svg map) | `none` |
+| `basemap` | `none`, a Stadia style, or `{light: <style>, dark: <style>}` to follow the color scheme (tiles under the svg map) | `none` |
+
+Stadia styles: `stadia-alidade-smooth`, `stadia-alidade-smooth-dark`,
+`stadia-alidade-bright`, `stadia-alidade-satellite`, `stadia-outdoors`,
+`stadia-osm-bright`, `stadia-toner`, `stadia-toner-lite`, `stadia-toner-dark`,
+`stadia-toner-blacklite`, `stadia-toner-background`, `stadia-terrain`,
+`stadia-terrain-background`, `stadia-watercolor`.
 
 `title` names the site, and `routes` filters routes by `route_types`,
 `route_ids`, `exclude_route_types` and `exclude_route_ids`. Unknown keys are an
