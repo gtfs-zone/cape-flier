@@ -1,3 +1,9 @@
+## v0.4.0 (2026-09-28)
+
+### Feat
+
+- **root**: brand color dot per agency
+
 ## v0.3.0 (2026-09-28)
 
 ### Feat
