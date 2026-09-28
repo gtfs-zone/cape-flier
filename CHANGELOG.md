@@ -1,3 +1,9 @@
+## v0.5.0 (2026-09-29)
+
+### Feat
+
+- **seo**: sitemap, IndexNow, amenity legend, multiday service and page updates
+
 ## v0.4.0 (2026-09-28)
 
 ### Feat
