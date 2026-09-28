@@ -1,18 +1,14 @@
-"""Jinja environment over styles/, rendering pages to bytes."""
+"""Jinja environment over templates/, rendering pages to bytes."""
 
 from functools import cache
 
 from jinja2 import Environment, PackageLoader, StrictUndefined
 
-from cape_flier.config import Style
-
-BASE_STYLE: Style = "classic"
-
 
 @cache
 def environment() -> Environment:
     return Environment(
-        loader=PackageLoader("cape_flier", "styles"),
+        loader=PackageLoader("cape_flier", "templates"),
         autoescape=True,
         undefined=StrictUndefined,
         trim_blocks=True,
@@ -21,9 +17,12 @@ def environment() -> Environment:
     )
 
 
-def render(style: Style, template: str, **context: object) -> bytes:
-    """Render styles/<style>/<template>, falling back to the classic style."""
-    page = environment().select_template(
-        [f"{style}/{template}", f"{BASE_STYLE}/{template}"]
-    )
-    return page.render(**context).encode()
+def asset(name: str) -> bytes:
+    """A static file from templates/."""
+    env = environment()
+    return env.loader.get_source(env, name)[0].encode()
+
+
+def render(template: str, **context: object) -> bytes:
+    """Render templates/<template>."""
+    return environment().get_template(template).render(**context).encode()

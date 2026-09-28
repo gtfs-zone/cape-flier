@@ -5,10 +5,9 @@ from typing import Any, Literal, Self
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-Style = Literal["classic", "rail"]
 MapKind = Literal["svg", "png", "none"]
+Basemap = Literal["none", "stadia-toner"]
 TimeFormat = Literal["12h", "24h"]
-Orientation = Literal["stops-down", "trips-down"]
 Timepoints = Literal["auto", "all", "timepoint-flag"]
 
 SLUG_PATTERN = r"^[a-z0-9]+(-[a-z0-9]+)*$"
@@ -19,12 +18,12 @@ class Strict(BaseModel):
 
 
 class Options(Strict):
-    style: Style = "classic"
     map: MapKind = "svg"
     horizon_days: int = Field(28, gt=0, le=366)
     time_format: TimeFormat = "12h"
-    orientation: Orientation = "stops-down"
     timepoints: Timepoints = "auto"
+    brand_color: str | None = Field(None, pattern=r"^[0-9A-Fa-f]{6}$")
+    basemap: Basemap = "none"
 
 
 class RouteFilter(Strict):

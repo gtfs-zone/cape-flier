@@ -1,0 +1,65 @@
+from datetime import date
+
+import pytest
+from conftest import fixture_zip, make_zip
+
+from cape_flier.gtfs.reader import parse_time, read_feed
+
+
+def test_parse_time():
+    assert parse_time("06:45:00") == 6 * 3600 + 45 * 60
+    assert parse_time(" 6:45:00") == 6 * 3600 + 45 * 60
+    assert parse_time("25:10:30") == 25 * 3600 + 10 * 60 + 30
+    assert parse_time("") is None
+
+
+def test_reads_rows_and_sorts_stop_times():
+    feed = read_feed(fixture_zip("branching"))
+    assert feed.agencies["a"].timezone == "America/New_York"
+    assert feed.routes["R"].name == "4"
+    assert feed.trips["north1"].headsign == "North"
+    assert [st.stop_id for st in feed.stop_times["north1"]] == ["A", "B", "C", "D"]
+    assert feed.calendars["DAILY"].start == date(2026, 1, 1)
+    assert feed.shapes == {}
+    assert feed.frequencies == {}
+
+
+def test_missing_times_and_timepoint_column():
+    feed = read_feed(fixture_zip("missing-timepoints"))
+    times = feed.stop_times["t1"]
+    assert times[2].arrival is None and times[2].departure is None
+    assert all(st.timepoint is None for st in times)
+
+
+def test_calendar_dates_only():
+    feed = read_feed(fixture_zip("calendar-dates-only"))
+    assert feed.calendars == {}
+    assert feed.calendar_dates["SAT"][date(2026, 10, 10)] is True
+
+
+def test_route_filter_drops_trips_and_stop_times():
+    feed = read_feed(fixture_zip("branching"), keep_route=lambda r: r.route_type == 2)
+    assert feed.routes == {} and feed.trips == {} and feed.stop_times == {}
+
+
+def test_nested_directory_and_bom():
+    files = {
+        f"gtfs/{path}": body
+        for path, body in {
+            "agency.txt": "﻿agency_id,agency_name,agency_url,agency_timezone\n"
+            "a,A,https://a,UTC\n",
+            "routes.txt": "route_id,route_type\nR,3\n",
+            "trips.txt": "route_id,service_id,trip_id\nR,S,T\n",
+            "stop_times.txt": "trip_id,stop_id,stop_sequence\n",
+            "stops.txt": "stop_id,stop_name\n",
+            "calendar_dates.txt": "service_id,date,exception_type\n",
+        }.items()
+    }
+    feed = read_feed(make_zip(files))
+    assert feed.agencies["a"].timezone == "UTC"
+    assert feed.trips["T"].direction_id is None
+
+
+def test_missing_required_file():
+    with pytest.raises(ValueError, match="stop_times"):
+        read_feed(make_zip({"agency.txt": "agency_id\n"}))

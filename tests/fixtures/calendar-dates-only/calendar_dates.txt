@@ -1,0 +1,5 @@
+service_id,date,exception_type
+SAT,20261010,1
+SAT,20261017,1
+SAT,20261014,1
+SPECIAL,20261012,1

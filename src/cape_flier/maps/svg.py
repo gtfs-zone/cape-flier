@@ -1,0 +1,502 @@
+"""Route and system maps as inline SVG: Web Mercator, simplified, with an
+optional raster basemap laid under the SVG as lazy-loaded tile images."""
+
+import math
+from collections import Counter
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
+from itertools import pairwise
+
+from markupsafe import Markup, escape
+
+from cape_flier.config import Basemap
+from cape_flier.gtfs.reader import Feed
+from cape_flier.pages import contrast
+from cape_flier.timetable import Timetable
+
+# viewBox width; the height follows the map's shape within these ratios.
+WIDTH = 600
+MIN_RATIO = 0.5
+MAX_RATIO = 1.2
+PAD = 16
+# Douglas-Peucker tolerance in viewBox units.
+TOLERANCE = 1.0
+FONT_SIZE = 22
+# Average glyph width of the system font stack as a share of the font size.
+GLYPH = 0.56
+DOT = 5
+# Side of the grid cells used to count how much line a label would cover.
+CELL = 6
+MAJOR_DOT = 7
+# Route colors closer than this to the page background are drawn in ink.
+MIN_LINE_CONTRAST = 1.6
+LIGHT_BG = "FFFFFF"
+DARK_BG = "141414"
+# CSS width the map is laid out at on desktop, and the tile size aimed for there.
+DISPLAY_WIDTH = 512
+TILE_CSS = 256
+MAX_ZOOM = 18
+TILES = {
+    "stadia-toner": (
+        "https://tiles.stadiamaps.com/tiles/stamen_toner_lite/{z}/{x}/{y}@2x.png",
+        "https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}@2x.png",
+    ),
+}
+ATTRIBUTION = (
+    '&copy; <a href="https://stadiamaps.com/" target="_blank" rel="noopener">'
+    "Stadia Maps</a> "
+    '&copy; <a href="https://stamen.com/" target="_blank" rel="noopener">'
+    "Stamen Design</a> "
+    '&copy; <a href="https://openmaptiles.org/" target="_blank" rel="noopener">'
+    "OpenMapTiles</a> "
+    '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank"'
+    ' rel="noopener">OpenStreetMap</a>'
+)
+
+type Point = tuple[float, float]
+type Box = tuple[float, float, float, float]
+
+
+@dataclass(frozen=True, slots=True)
+class Line:
+    """One route: its paths as (lat, lon) points."""
+
+    title: str
+    color: str | None
+    paths: tuple[tuple[Point, ...], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class Mark:
+    """A labeled stop; major marks get a bigger dot and are labeled first."""
+
+    lat: float
+    lon: float
+    label: str
+    major: bool = False
+    rank: int = 0
+
+
+def mercator(lat: float, lon: float) -> Point:
+    """Web Mercator with y growing down, in radians of longitude."""
+    lat = max(min(lat, 85.0), -85.0)
+    y = math.log(math.tan(math.pi / 4 + math.radians(lat) / 2))
+    return math.radians(lon), -y
+
+
+def simplify(points: Sequence[Point], tolerance: float) -> list[Point]:
+    """Douglas-Peucker, iterative so long rail shapes cannot hit recursion limits."""
+    if len(points) < 3:
+        return list(points)
+    keep = [False] * len(points)
+    keep[0] = keep[-1] = True
+    stack = [(0, len(points) - 1)]
+    while stack:
+        first, last = stack.pop()
+        (ax, ay), (bx, by) = points[first], points[last]
+        dx, dy = bx - ax, by - ay
+        length = math.hypot(dx, dy)
+        worst, index = 0.0, -1
+        for i in range(first + 1, last):
+            px, py = points[i]
+            if length == 0:
+                distance = math.hypot(px - ax, py - ay)
+            else:
+                distance = abs(dy * (px - ax) - dx * (py - ay)) / length
+            if distance > worst:
+                worst, index = distance, i
+        if worst > tolerance:
+            keep[index] = True
+            stack.append((first, index))
+            stack.append((index, last))
+    return [p for p, kept in zip(points, keep, strict=True) if kept]
+
+
+class Projection:
+    """Fits a set of (lat, lon) points into a WIDTH-wide viewBox."""
+
+    def __init__(self, points: Iterable[tuple[float, float]]) -> None:
+        projected = [mercator(lat, lon) for lat, lon in points]
+        xs = [x for x, _ in projected] or [0.0]
+        ys = [y for _, y in projected] or [0.0]
+        self.min_x, self.min_y = min(xs), min(ys)
+        # A floor on the extent so a single stop or a tiny loop still gets a frame.
+        span_x = max(max(xs) - self.min_x, 1e-4)
+        span_y = max(max(ys) - self.min_y, 1e-4)
+        inner = WIDTH - 2 * PAD
+        ratio = min(max(span_y / span_x, MIN_RATIO), MAX_RATIO)
+        self.height = round(inner * ratio + 2 * PAD)
+        self.scale = min(inner / span_x, (self.height - 2 * PAD) / span_y)
+        self.off_x = (WIDTH - span_x * self.scale) / 2
+        self.off_y = (self.height - span_y * self.scale) / 2
+
+    def __call__(self, lat: float, lon: float) -> Point:
+        return self.to_viewbox(*mercator(lat, lon))
+
+    def to_viewbox(self, x: float, y: float) -> Point:
+        """A mercator point to viewBox units."""
+        return (
+            (x - self.min_x) * self.scale + self.off_x,
+            (y - self.min_y) * self.scale + self.off_y,
+        )
+
+    def to_mercator(self, vx: float, vy: float) -> Point:
+        return (
+            (vx - self.off_x) / self.scale + self.min_x,
+            (vy - self.off_y) / self.scale + self.min_y,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class Tile:
+    """A slippy-map tile and where it sits, as percentages of the map box."""
+
+    z: int
+    x: int
+    y: int
+    left: float
+    top: float
+    width: float
+    height: float
+
+
+def tiles(project: Projection) -> list[Tile]:
+    """Tiles covering the viewBox, at the zoom whose tiles show about
+    TILE_CSS pixels wide when the map is DISPLAY_WIDTH pixels wide."""
+    world = 2 * math.pi
+    target = world * project.scale * DISPLAY_WIDTH / (WIDTH * TILE_CSS)
+    z = min(max(round(math.log2(target)), 0), MAX_ZOOM)
+    count = 1 << z
+    size = world / count
+
+    def tile_index(m: float) -> int:
+        return min(max(math.floor((m + math.pi) / size), 0), count - 1)
+
+    left, top = project.to_mercator(0, 0)
+    right, bottom = project.to_mercator(WIDTH, project.height)
+    result = []
+    for ty in range(tile_index(top), tile_index(bottom) + 1):
+        for tx in range(tile_index(left), tile_index(right) + 1):
+            x0, y0 = project.to_viewbox(tx * size - math.pi, ty * size - math.pi)
+            side = size * project.scale
+            result.append(
+                Tile(
+                    z,
+                    tx,
+                    ty,
+                    100 * x0 / WIDTH,
+                    100 * y0 / project.height,
+                    100 * side / WIDTH,
+                    100 * side / project.height,
+                )
+            )
+    return result
+
+
+def tile_layer(project: Projection, basemap: Basemap) -> str:
+    """<picture> tiles, light by default and dark under a dark color scheme."""
+    light, dark = TILES[basemap]
+    parts = ['<div class="tiles" aria-hidden="true">']
+    for t in tiles(project):
+        style = (
+            f"left:{t.left:.3f}%;top:{t.top:.3f}%;"
+            f"width:{t.width:.3f}%;height:{t.height:.3f}%"
+        )
+        parts.append(
+            f'<picture><source media="(prefers-color-scheme: dark)"'
+            f' srcset="{dark.format(z=t.z, x=t.x, y=t.y)}">'
+            f'<img src="{light.format(z=t.z, x=t.x, y=t.y)}" alt=""'
+            f' loading="lazy" decoding="async" style="{style}"></picture>'
+        )
+    parts.append("</div>")
+    return "".join(parts)
+
+
+def number(value: int, first: bool) -> str:
+    """A path number; negatives need no separating space."""
+    return str(value) if first or value < 0 else f" {value}"
+
+
+def rounded_path(points: Sequence[Point]) -> list[tuple[int, int]]:
+    return [(round(x), round(y)) for x, y in simplify(points, TOLERANCE)]
+
+
+def path_data(rounded: Sequence[tuple[int, int]]) -> str:
+    """'M x y l dx dy ...' from integer points, dropping zero steps."""
+    x0, y0 = rounded[0]
+    parts = [f"M{x0}{number(y0, False)}l"]
+    first = True
+    px, py = x0, y0
+    for x, y in rounded[1:]:
+        if (x, y) == (px, py):
+            continue
+        parts.append(number(x - px, first) + number(y - py, False))
+        first = False
+        px, py = x, y
+    if first:
+        # A path of one point: draw a zero-length step so round caps show a dot.
+        parts.append("0 0")
+    return "".join(parts)
+
+
+def line_class(color: str | None) -> str:
+    """CSS classes swapping a route color for ink where it would vanish."""
+    if color is None:
+        return "ink"
+    classes = []
+    if contrast(color, LIGHT_BG) < MIN_LINE_CONTRAST:
+        classes.append("pale")
+    if contrast(color, DARK_BG) < MIN_LINE_CONTRAST:
+        classes.append("deep")
+    return " ".join(classes)
+
+
+def line_cells(paths: Iterable[Sequence[tuple[int, int]]]) -> set[tuple[int, int]]:
+    """Grid cells the drawn lines pass through, sampled every half cell."""
+    cells = set()
+    for path in paths:
+        for (ax, ay), (bx, by) in pairwise(path):
+            steps = max(1, math.ceil(math.hypot(bx - ax, by - ay) / (CELL / 2)))
+            for i in range(steps + 1):
+                t = i / steps
+                cells.add(
+                    (
+                        int((ax + (bx - ax) * t) // CELL),
+                        int((ay + (by - ay) * t) // CELL),
+                    )
+                )
+        if len(path) == 1:
+            cells.add((path[0][0] // CELL, path[0][1] // CELL))
+    return cells
+
+
+def covered(box: Box, cells: set[tuple[int, int]]) -> int:
+    """How many line cells fall under a box."""
+    return sum(
+        (cx, cy) in cells
+        for cx in range(int(box[0] // CELL), int(box[2] // CELL) + 1)
+        for cy in range(int(box[1] // CELL), int(box[3] // CELL) + 1)
+    )
+
+
+def overlaps(a: Box, b: Box) -> bool:
+    return a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
+
+
+def label_box(x: float, y: float, text: str, side: str, gap: float) -> Box:
+    """Bounding box of a label beside a dot at (x, y)."""
+    width = len(text) * FONT_SIZE * GLYPH
+    half = FONT_SIZE / 2
+    if side == "right":
+        return (x + gap, y - half, x + gap + width, y + half)
+    if side == "left":
+        return (x - gap - width, y - half, x - gap, y + half)
+    if side == "above":
+        return (x - width / 2, y - gap - FONT_SIZE, x + width / 2, y - gap)
+    return (x - width / 2, y + gap, x + width / 2, y + gap + FONT_SIZE)
+
+
+ANCHORS = {"right": "start", "left": "end", "above": "middle", "below": "middle"}
+
+
+def place_labels(
+    dots: list[tuple[float, float, Mark]], height: int, cells: set[tuple[int, int]]
+) -> list[tuple[Box, str, str]]:
+    """Greedy placement, most important first, on the side covering the least
+    line and fewest other dots; labels that fit nowhere are dropped."""
+    circles: list[Box] = [
+        (x - r, y - r, x + r, y + r)
+        for x, y, mark in dots
+        for r in [MAJOR_DOT if mark.major else DOT]
+    ]
+    taken: list[Box] = []
+    placed = []
+    for x, y, mark in sorted(dots, key=lambda d: (not d[2].major, -d[2].rank)):
+        gap = (MAJOR_DOT if mark.major else DOT) + 4
+        options = []
+        for order, side in enumerate(ANCHORS):
+            box = label_box(x, y, mark.label, side, gap)
+            inside = (
+                box[0] >= 0 and box[1] >= 0 and box[2] <= WIDTH and box[3] <= height
+            )
+            if inside and not any(overlaps(box, other) for other in taken):
+                hidden = sum(overlaps(box, circle) for circle in circles)
+                options.append((hidden, covered(box, cells), order, box, side))
+        if options:
+            *_, box, side = min(options)
+            taken.append(box)
+            placed.append((box, side, mark.label))
+    return placed
+
+
+def render_map(
+    title: str,
+    lines: Sequence[Line],
+    marks: Sequence[Mark],
+    basemap: Basemap = "none",
+    labels: bool = True,
+) -> Markup:
+    """An inline <svg> of the lines with their marked stops, empty when no
+    geometry; with a basemap, the svg sits over tiles in a `.map` box."""
+    lines = [line for line in lines if line.paths]
+    if not lines:
+        return Markup("")
+    points = [p for line in lines for path in line.paths for p in path]
+    project = Projection(points + [(m.lat, m.lon) for m in marks])
+
+    parts = []
+    if basemap != "none":
+        parts.append(
+            f'<div class="map basemap" style="aspect-ratio:{WIDTH}/{project.height}">'
+            + tile_layer(project, basemap)
+        )
+    parts.append(
+        f'<svg class="{"over" if basemap != "none" else "map"}"'
+        f' viewBox="0 0 {WIDTH} {project.height}" role="img"'
+        f' aria-label="{escape(title)}">'
+    )
+    drawn = [
+        [rounded_path([project(lat, lon) for lat, lon in path]) for path in line.paths]
+        for line in lines
+    ]
+    # Drawn last on top, so the first route listed ends up most visible.
+    for line, paths in reversed(list(zip(lines, drawn, strict=True))):
+        data = " ".join(path_data(path) for path in paths)
+        stroke = f' stroke="#{line.color}"' if line.color else ""
+        css = line_class(line.color)
+        parts.append(
+            f'<g><title>{escape(line.title)}</title><path class="case" d="{data}"/>'
+            f'<path class="line{" " + css if css else ""}"{stroke} d="{data}"/></g>'
+        )
+
+    # One dot per name and per spot, keeping the most important mark.
+    dots: list[tuple[float, float, Mark]] = []
+    seen: set[str] = set()
+    for mark in sorted(marks, key=lambda m: (not m.major, -m.rank)):
+        x, y = project(mark.lat, mark.lon)
+        near = any(math.hypot(x - dx, y - dy) < 2 * DOT for dx, dy, _ in dots)
+        if mark.label in seen or near:
+            continue
+        seen.add(mark.label)
+        dots.append((x, y, mark))
+    for x, y, mark in dots:
+        r = MAJOR_DOT if mark.major else DOT
+        parts.append(f'<circle class="stop" cx="{round(x)}" cy="{round(y)}" r="{r}"/>')
+    placed = (
+        place_labels(
+            dots, project.height, line_cells(p for paths in drawn for p in paths)
+        )
+        if labels
+        else []
+    )
+    for box, side, label in placed:
+        x = {"right": box[0], "left": box[2]}.get(side, (box[0] + box[2]) / 2)
+        # Baseline sits a little under the box middle for cap-height text.
+        y = box[3] - FONT_SIZE * 0.22
+        anchor = ANCHORS[side]
+        attr = "" if anchor == "start" else f' text-anchor="{anchor}"'
+        parts.append(
+            f'<text x="{round(x)}" y="{round(y)}"{attr}>{escape(label)}</text>'
+        )
+    parts.append("</svg>")
+    if basemap != "none":
+        parts.append(f'</div><p class="attribution">{ATTRIBUTION}</p>')
+    return Markup("".join(parts))
+
+
+def trip_ids(tables: Sequence[Timetable]) -> list[str]:
+    ids = dict.fromkeys(column.trip_id for table in tables for column in table.columns)
+    return list(ids)
+
+
+def route_line(feed: Feed, title: str, color: str | None, ids: Sequence[str]) -> Line:
+    """The route's distinct shapes, or its stop sequences for trips without one."""
+    shape_ids: dict[str, None] = {}
+    sequences: dict[tuple[str, ...], None] = {}
+    for trip_id in ids:
+        trip = feed.trips[trip_id]
+        if trip.shape_id in feed.shapes:
+            shape_ids[trip.shape_id] = None
+        else:
+            sequences[tuple(st.stop_id for st in feed.stop_times[trip_id])] = None
+    paths = [feed.shapes[shape_id] for shape_id in shape_ids]
+    for sequence in sequences:
+        path = tuple(
+            (stop.lat, stop.lon)
+            for stop_id in sequence
+            if (stop := feed.stops.get(stop_id))
+            and stop.lat is not None
+            and stop.lon is not None
+        )
+        if path:
+            paths.append(path)
+    return Line(title=title, color=color, paths=tuple(p for p in paths if p))
+
+
+def timepoint_stops(tables: Sequence[Timetable]) -> tuple[list[str], set[str]]:
+    """Timepoint stop ids in table order, and the tables' end stops."""
+    stops: dict[str, None] = {}
+    ends: set[str] = set()
+    for table in tables:
+        rows = [row for row in table.rows if row.timepoint]
+        stops.update(dict.fromkeys(row.stop_id for row in rows))
+        if rows:
+            ends |= {rows[0].stop_id, rows[-1].stop_id}
+    return list(stops), ends
+
+
+def mark(feed: Feed, stop_id: str, major: bool, rank: int = 0) -> Mark | None:
+    stop = feed.stops.get(stop_id)
+    if stop is None or stop.lat is None or stop.lon is None:
+        return None
+    return Mark(stop.lat, stop.lon, " ".join(stop.name.split()), major, rank)
+
+
+def route_marks(feed: Feed, tables: Sequence[Timetable]) -> list[Mark]:
+    stops, ends = timepoint_stops(tables)
+    return [m for s in stops if (m := mark(feed, s, s in ends))]
+
+
+def route_map(
+    feed: Feed,
+    title: str,
+    color: str | None,
+    tables: Sequence[Timetable],
+    basemap: Basemap = "none",
+) -> Markup:
+    """One route with its timepoints labeled and its ends emphasized."""
+    line = route_line(feed, title, color, trip_ids(tables))
+    return render_map(f"Map of {title}", [line], route_marks(feed, tables), basemap)
+
+
+def system_lines(
+    feed: Feed, routes: Sequence[tuple[str, str | None, list[Timetable]]]
+) -> tuple[list[Line], list[Mark]]:
+    """Every route's line, and its timepoints as marks; stops on two or more
+    routes or at a route's end are major, ranked by routes served."""
+    lines = []
+    served: Counter[str] = Counter()
+    ends: set[str] = set()
+    for name, color, tables in routes:
+        lines.append(route_line(feed, name, color, trip_ids(tables)))
+        stops, route_ends = timepoint_stops(tables)
+        served.update(stops)
+        ends |= route_ends
+    marks = [
+        m
+        for stop_id, count in served.items()
+        if (m := mark(feed, stop_id, count > 1 or stop_id in ends, count))
+    ]
+    return lines, marks
+
+
+def system_map(
+    feed: Feed,
+    title: str,
+    routes: Sequence[tuple[str, str | None, list[Timetable]]],
+    basemap: Basemap = "none",
+    labels: bool = True,
+) -> Markup:
+    """Every route with its timepoints, labels going to the busiest stops."""
+    lines, marks = system_lines(feed, routes)
+    return render_map(f"Map of {title}", lines, marks, basemap, labels)

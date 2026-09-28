@@ -1,0 +1,38 @@
+{% macro badge(route, size="badge-lg") %}
+<span class="badge {{ size }} h-auto min-w-12 whitespace-normal border-0 font-bold{% if not route.colors %} badge-neutral{% endif %}"{% if route.colors %} style="background:#{{ route.colors[0] }};color:#{{ route.colors[1] }}"{% endif %}>{{ route.badge }}</span>
+{%- endmacro %}
+{% macro time_cell(head, cell, time) %}
+<td{% if time and time.pm %} class="pm"{% endif %}>
+{%- if time %}{{ time.text }}{% if time.next_day %}<sup>+1</sup>{% endif %}{% elif cell.untimed %}|{% endif %}
+{%- if cell.mark %}<sup>{{ cell.mark }}</sup>{% endif %}</td>
+{%- endmacro %}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}{% endblock %}</title>
+<meta name="description" content="{% block description %}{% endblock %}">
+<link rel="canonical" href="{% block canonical %}{{ base_url }}{% endblock %}">
+<meta name="color-scheme" content="light dark">
+{% if brand %}<meta name="theme-color" content="#{{ brand[0] }}">{% endif %}
+<link rel="stylesheet" href="{{ root }}style.css">
+{% if brand %}
+<style>:root { --color-primary: #{{ brand[0] }}; --color-primary-content: #{{ brand[1] }}; }</style>
+{% endif %}
+</head>
+<body class="min-h-screen bg-base-200 text-base-content">
+<header class="navbar {{ 'bg-primary text-primary-content' if brand else 'bg-base-100' }} shadow-sm">
+<div class="mx-auto w-full max-w-4xl px-2">
+<a class="btn btn-ghost h-auto min-h-11 py-2 text-left text-lg" href="{{ root or './' }}">{{ site_title }}</a>
+</div>
+</header>
+<main class="mx-auto max-w-4xl space-y-6 px-4 py-6">
+{% block main %}{% endblock %}
+</main>
+<footer class="mx-auto max-w-4xl space-y-1 px-4 pb-8 text-sm text-base-content/70">
+<p>Generated {{ generated.strftime("%b") }} {{ generated.day }}, {{ generated.year }} from the agency's GTFS feed. Check with the agency before you travel.</p>
+<p><a class="link" href="{{ root }}../">sites.gtfs.zone</a></p>
+</footer>
+</body>
+</html>

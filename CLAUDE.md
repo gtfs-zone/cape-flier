@@ -14,7 +14,9 @@ ruff check .                                   # lint
 ruff format .                                  # format
 uv run pytest                                  # tests
 uv run cape-flier build --site <slug> [--zip <path>] [--out dist/]
+uv run cape-flier dump --site <slug> [--zip <path>] [--date YYYY-MM-DD] [--all-stops]
 uv run cape-flier serve                        # serve dist/ on the LAN
+pnpm install && pnpm run build:css             # rebuild templates/style.css after template changes
 pre-commit install                             # install git hooks
 ```
 
@@ -23,10 +25,15 @@ pre-commit install                             # install git hooks
 | Module | What it does |
 |---|---|
 | `config.py` | Pydantic models for `sites.yaml`; defaults merged into each site |
+| `gtfs/reader.py` | GTFS zip to typed rows, streaming, only needed columns |
+| `gtfs/service.py` | Calendars to day types (Weekday / Saturday / Sunday / exceptions) |
+| `timetable.py` | Route + direction + day type to a `Timetable`, plus a text dump |
 | `build.py` | `build_site(zip_bytes, site) -> {path: bytes}`, the only entry point |
-| `render.py` | Jinja environment over `styles/`, falling back to `classic` templates |
-| `styles/<style>/` | Templates and CSS per style |
-| `cli.py` | `cape-flier build` and `serve`; the only place that downloads or writes files |
+| `maps/svg.py` | Route and system maps as inline SVG: Web Mercator, Douglas-Peucker, label placement (none on bus-only system maps), basemap tiles |
+| `render.py` | Jinja environment over `templates/` |
+| `templates/` | Page templates and CSS (Tailwind + daisyUI, `style.css` built by `pnpm run build:css` and committed) |
+| `tests/fixtures/<name>/` | Synthetic GTFS feeds as text files, zipped by `fixture_zip` |
+| `cli.py` | `cape-flier build`, `dump` and `serve`; the only place that downloads or writes files |
 
 ## Rules
 

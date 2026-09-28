@@ -1,0 +1,4 @@
+route_id,service_id,trip_id,direction_id
+R,DAILY,late,0
+R,DAILY,early,0
+R,DAILY,noon,0

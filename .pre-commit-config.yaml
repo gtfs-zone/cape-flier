@@ -6,3 +6,13 @@ repos:
     hooks:
       - id: commitizen
         stages: [commit-msg]
+
+  - repo: local
+    hooks:
+      - id: daisyui-css
+        name: build style.css
+        entry: pnpm run build:css
+        language: system
+        files: ^(src/cape_flier/templates/.*\.(html|css)|package\.json)$
+        exclude: ^src/cape_flier/templates/style\.css$
+        pass_filenames: false

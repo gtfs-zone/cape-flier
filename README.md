@@ -25,12 +25,12 @@ and exactly one of `feed` or `url`, and may override any default:
 
 | Option | Values | Default |
 |---|---|---|
-| `style` | `classic`, `rail` | `classic` |
 | `map` | `svg`, `png`, `none` | `svg` |
 | `horizon_days` | days used to derive day types | `28` |
 | `time_format` | `12h`, `24h` | `12h` |
-| `orientation` | `stops-down`, `trips-down` | `stops-down` |
 | `timepoints` | `auto`, `all`, `timepoint-flag` | `auto` |
+| `brand_color` | `RRGGBB` for the header and links | none |
+| `basemap` | `none`, `stadia-toner` (tiles under the svg map) | `none` |
 
 `title` names the site, and `routes` filters routes by `route_types`,
 `route_ids`, `exclude_route_types` and `exclude_route_ids`. Unknown keys are an

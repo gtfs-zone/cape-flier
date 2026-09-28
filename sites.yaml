@@ -1,10 +1,10 @@
 defaults:
-  style: classic
   map: svg                 # svg | png | none
   horizon_days: 28         # window used to derive day types and effective dates
   time_format: 12h         # 12h | 24h
-  orientation: stops-down  # stops-down (trips across) | trips-down
   timepoints: auto         # auto | all | timepoint-flag
+  brand_color: null        # RRGGBB for the header and links
+  basemap: stadia-toner    # none | stadia-toner (tiles under the svg map)
 
 # Each site takes either `feed:` (a feed id from data.gtfs.zone/feeds.json,
 # resolved at build time) or `url:` (a direct GTFS zip URL), plus any option
@@ -15,8 +15,13 @@ sites:
     title: Columbia County Public Transportation
   - slug: amtrak
     feed: f-2f033a022e
-    style: rail
+    brand_color: 00537E
+    routes: { route_types: [2] }
   - slug: mbta-commuter-rail
     feed: f-1f748c5476
     routes: { route_types: [2] }
     title: MBTA Commuter Rail
+    brand_color: 80276C
+  - slug: big-blue-bus
+    feed: f-da2e3cdeed
+    brand_color: 0E4C92

@@ -1,0 +1,12 @@
+{
+  "name": "cape-flier-styles",
+  "private": true,
+  "scripts": {
+    "build:css": "tailwindcss -i src/cape_flier/templates/input.css -o src/cape_flier/templates/style.css --minify && sed -i 's|/\\*! 🌼 daisyUI|/*! daisyUI|' src/cape_flier/templates/style.css"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "4.3.3",
+    "daisyui": "5.7.46",
+    "tailwindcss": "4.3.3"
+  }
+}

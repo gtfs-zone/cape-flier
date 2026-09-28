@@ -10,8 +10,8 @@ REPO_CONFIG = Path(__file__).parent.parent / "sites.yaml"
 
 def test_repo_config_loads():
     config = load_config(REPO_CONFIG.read_text())
-    assert config.site("columbia-county").style == "classic"
-    assert config.site("amtrak").style == "rail"
+    assert config.site("columbia-county").basemap == "stadia-toner"
+    assert config.site("amtrak").brand_color == "00537E"
 
 
 def test_site_overrides_defaults():
@@ -38,6 +38,10 @@ sites:
         "sites: [{slug: Bad Slug, url: u}]",
         "sites: [{slug: a, url: u}, {slug: a, url: v}]",
         "sites: [{slug: a, url: u, style: fancy}]",
+        "sites: [{slug: a, url: u, orientation: trips-down}]",
+        "sites: [{slug: a, url: u, brand_color: red}]",
+        "sites: [{slug: a, url: u, basemap: osm}]",
+        "sites: [{slug: a, url: u, interactive_map: true}]",
     ],
 )
 def test_invalid_config(text):

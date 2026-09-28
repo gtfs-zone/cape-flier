@@ -15,3 +15,4 @@ dagster_home/
 .tmp_dagster_home_*/
 
 CURRENT_PLAN.md
+node_modules/

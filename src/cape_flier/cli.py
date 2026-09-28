@@ -3,15 +3,18 @@
 import argparse
 import contextlib
 import functools
+import gzip
 import json
 import logging
 import socket
 import urllib.request
+from datetime import date
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from cape_flier.build import build_site
+from cape_flier.build import build_site, site_feed, site_timetables
 from cape_flier.config import Site, load_config
+from cape_flier.timetable import to_text
 
 log = logging.getLogger(__name__)
 
@@ -48,6 +51,32 @@ def build(args: argparse.Namespace) -> None:
     root = args.out / site.slug
     write_files(files, root)
     log.info("wrote %d files to %s", len(files), root)
+
+
+def dump(args: argparse.Namespace) -> None:
+    site = load_config(args.config.read_text()).site(args.site)
+    feed = site_feed(feed_zip(site, args.zip), site)
+    today = args.date or date.today()
+    for route, tables in site_timetables(feed, site, today):
+        print(f"# {route.name}")
+        for table in tables:
+            print(to_text(table, site.time_format, all_rows=args.all_stops))
+            print()
+
+
+BUDGET_GZIP = 50_000
+
+
+def sizes(args: argparse.Namespace) -> None:
+    """Print the largest built pages by gzip size, flagging those over budget."""
+    rows = []
+    for path in args.dir.rglob("*.html"):
+        body = path.read_bytes()
+        rows.append((len(gzip.compress(body)), len(body), path))
+    rows.sort(reverse=True)
+    for packed, raw, path in rows[: args.top]:
+        flag = "  OVER" if packed > BUDGET_GZIP else ""
+        print(f"{packed / 1000:6.1f} {raw / 1000:7.1f} KB  {path}{flag}")
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -87,6 +116,23 @@ def parser() -> argparse.ArgumentParser:
     build_cmd.add_argument("--out", type=Path, default=Path("dist"))
     build_cmd.add_argument("--config", type=Path, default=Path("sites.yaml"))
     build_cmd.set_defaults(func=build)
+
+    dump_cmd = commands.add_parser("dump", help="print one site's timetables")
+    dump_cmd.add_argument("--site", required=True, help="site slug in the config")
+    dump_cmd.add_argument("--zip", type=Path, help="local GTFS zip instead of the feed")
+    dump_cmd.add_argument("--config", type=Path, default=Path("sites.yaml"))
+    dump_cmd.add_argument(
+        "--date", type=date.fromisoformat, help="horizon start (default today)"
+    )
+    dump_cmd.add_argument(
+        "--all-stops", action="store_true", help="include non-timepoint stops"
+    )
+    dump_cmd.set_defaults(func=dump)
+
+    sizes_cmd = commands.add_parser("sizes", help="report the largest built pages")
+    sizes_cmd.add_argument("--dir", type=Path, default=Path("dist"))
+    sizes_cmd.add_argument("--top", type=int, default=10)
+    sizes_cmd.set_defaults(func=sizes)
 
     serve_cmd = commands.add_parser("serve", help="serve built sites")
     serve_cmd.add_argument("--dir", type=Path, default=Path("dist"))

@@ -1,12 +1,6 @@
 import io
 import zipfile
-
-import pytest
-
-MINIMAL_FEED = {
-    "agency.txt": "agency_id,agency_name,agency_url,agency_timezone\n"
-    "a,Test Agency,https://example.org,America/New_York\n",
-}
+from pathlib import Path
 
 
 def make_zip(files: dict[str, str]) -> bytes:
@@ -17,6 +11,13 @@ def make_zip(files: dict[str, str]) -> bytes:
     return buffer.getvalue()
 
 
-@pytest.fixture
-def minimal_zip() -> bytes:
-    return make_zip(MINIMAL_FEED)
+FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def fixture_files(name: str) -> dict[str, str]:
+    """The text files in tests/fixtures/<name>/ by file name."""
+    return {path.name: path.read_text() for path in (FIXTURES / name).glob("*.txt")}
+
+
+def fixture_zip(name: str) -> bytes:
+    return make_zip(fixture_files(name))

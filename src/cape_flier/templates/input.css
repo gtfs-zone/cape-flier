@@ -1,0 +1,92 @@
+@import "tailwindcss" source(none);
+@source "./*.html";
+@plugin "daisyui" {
+  themes: light --default, dark --prefersdark;
+  include: properties, rootcolor, rootscrolllock, scrollbar, svg, button, badge, card, navbar, list, link;
+  logs: false;
+}
+
+@layer base {
+  html { overflow-x: clip; }
+  p, li, h1, h2, h3, summary { overflow-wrap: anywhere; }
+}
+
+/* Timetables */
+.timetable { border-collapse: separate; border-spacing: 0; font-variant-numeric: tabular-nums; }
+.timetable th, .timetable td { padding: .4rem .6rem; border-bottom: 1px solid var(--color-base-300); }
+.timetable tbody tr:last-child > * { border-bottom: 0; }
+.timetable td { text-align: right; white-space: nowrap; }
+.timetable :is(th[scope=row], thead td:first-child, tfoot td:first-child) {
+  position: sticky; left: 0; z-index: 1;
+  min-width: 8rem; max-width: 40vw;
+  background: var(--color-base-100);
+  border-right: 1px solid var(--color-base-300);
+  font-weight: 400; text-align: left;
+}
+.timetable th[scope=row] small { display: block; opacity: .7; }
+.timetable thead th { font-size: .85rem; font-weight: 600; text-align: right; }
+.timetable thead tr.to th { font-weight: 400; color: color-mix(in oklab, var(--color-base-content) 70%, transparent); white-space: normal; }
+.timetable thead tr.to th[colspan] { text-align: left; }
+.timetable thead tr.to th + th { border-left: 1px solid var(--color-base-300); }
+.timetable .alt { background: var(--color-base-200); }
+/* A headsign spanning shaded and unshaded columns covers the column shading */
+.timetable tr.to th:not(.alt) { background: var(--color-base-100); }
+.timetable .pm { font-weight: 700; }
+.timetable sup { font-size: .7em; line-height: 0; }
+.timetable tbody tr:hover > * { background: var(--color-base-300); }
+.timetable td.every { white-space: normal; min-width: 7rem; font-size: .85rem; opacity: .7; text-align: left; }
+@media (min-width: 40rem) { .timetable th[scope=row] { max-width: 18rem; } }
+
+/* Route-colored rail down the stop column, a dot per stop, filled at the ends */
+.timetable { --rail: 7px; --x: 1rem; }
+.timetable th[scope=row] { padding-left: 2.25rem; }
+.timetable th[scope=row]::before {
+  content: ""; position: absolute; left: var(--x); top: 0; bottom: -1px; width: var(--rail);
+  transform: translateX(-50%);
+  background: var(--line, var(--color-base-content));
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--color-base-content) 15%, transparent);
+}
+.timetable tbody tr:first-child th[scope=row]::before { top: 50%; }
+.timetable tbody tr:last-child th[scope=row]::before { bottom: 50%; }
+.timetable tbody tr:only-child th[scope=row]::before { display: none; }
+.timetable .dot {
+  position: absolute; left: var(--x); top: 50%;
+  width: .8rem; height: .8rem; border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--color-base-100);
+  box-shadow: inset 0 0 0 3px var(--line, var(--color-base-content)), 0 0 0 1px color-mix(in oklab, var(--color-base-content) 25%, transparent);
+}
+/* A long stop takes an arrival row and a departure row; the last stop's rail ends at its dot */
+.timetable tr.ar > * { border-bottom: 0; }
+.timetable tr.ar:nth-last-child(2) th[scope=row]::before { bottom: 50%; }
+.timetable tr.dp:last-child th[scope=row]::before { display: none; }
+.timetable tbody tr:is(:first-child, :last-child, .ar:nth-last-child(2)) .dot { width: 1rem; height: 1rem; background: var(--line, var(--color-base-content)); }
+
+/* Maps */
+.map { display: block; width: 100%; max-width: 36rem; height: auto; margin: 0 auto; }
+.map path { fill: none; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.map .case { stroke: var(--color-base-100); stroke-width: 7px; }
+.map .line { stroke-width: 4px; }
+.map .ink { stroke: var(--color-base-content); }
+.map .stop { fill: var(--color-base-100); stroke: var(--color-base-content); stroke-width: 2px; vector-effect: non-scaling-stroke; }
+.map text {
+  font: 22px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  fill: var(--color-base-content);
+  stroke: var(--color-base-100); stroke-width: 5px; stroke-linejoin: round; paint-order: stroke;
+}
+.map.basemap { position: relative; overflow: hidden; border-radius: var(--radius-box); }
+.tiles img { position: absolute; max-width: none; opacity: .75; }
+.map .over { position: absolute; inset: 0; width: 100%; height: 100%; }
+.attribution { font-size: .75rem; opacity: .7; text-align: center; margin-top: .25rem; }
+@media (prefers-color-scheme: light) { .map .pale { stroke: var(--color-base-content); } }
+@media (prefers-color-scheme: dark) { .map .deep { stroke: var(--color-base-content); } }
+
+@media print {
+  .navbar, .tiles, .attribution { display: none !important; }
+  .timetable :is(th[scope=row], thead td:first-child, tfoot td:first-child) { position: static; }
+  .timetable { font-size: 9pt; }
+  .timetable th, .timetable td { padding: .15rem .35rem; }
+  .timetable tr { break-inside: avoid; }
+  .map .pale { stroke: var(--color-base-content); }
+  .map, .alt, .timetable th[scope=row] { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}

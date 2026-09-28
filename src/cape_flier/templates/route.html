@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}{{ route.badge }}{% if route.name %} {{ route.name }}{% endif %} timetable - {{ site_title }}{% endblock %}
+{% block description %}{{ route.badge }}{% if route.name %} {{ route.name }}{% endif %} timetable{% if route.days %} ({{ route.days | join(", ") }}){% endif %}, {{ site_title }}.{% endblock %}
+{% block canonical %}{{ base_url }}{{ route.slug }}/{% endblock %}
+{% macro stop_name(row) %}<span class="dot" aria-hidden="true"></span>
+{%- if row.google %}<a class="link link-hover" href="{{ row.google }}" target="_blank" rel="noopener">{{ row.name }}</a>{% else %}{{ row.name }}{% endif %}
+{%- endmacro %}
+{% block main %}
+<div class="space-y-2">
+<h1 class="flex flex-wrap items-center gap-3 text-2xl font-bold sm:text-3xl">{{ badge(route) }}{% if route.name %}<span class="min-w-0">{{ route.name }}</span>{% endif %}</h1>
+{% if route.desc %}<p class="text-base-content/80">{{ route.desc }}</p>{% endif %}
+</div>
+{% if map %}
+<section class="card bg-base-100 shadow-sm">
+<div class="card-body p-4">
+{% include "map.html" %}
+</div>
+</section>
+{% endif %}
+{% for day in days %}
+<section class="card bg-base-100 shadow-sm" id="{{ day.anchor }}">
+<div class="card-body min-w-0 gap-3 p-4">
+<h2 class="text-lg font-semibold">{{ day.name }} <span class="text-sm font-normal text-base-content/70">{{ day.trips }} trip{{ "s" if day.trips != 1 }}</span></h2>
+{% for note in day.notes %}
+<p class="text-base-content/80">{{ note }}</p>
+{% endfor %}
+{% for table in day.tables %}
+<div id="{{ table.anchor }}" class="scroll-mt-4 space-y-2">
+<h3 class="font-semibold">{{ table.title }}</h3>
+<div class="max-w-full overflow-x-auto rounded-box border border-base-300" tabindex="0" role="region" aria-label="{{ table.title }}, {{ day.name }}">
+<table class="timetable"{% if route.line_color %} style="--line:#{{ route.line_color }}"{% endif %}>
+<colgroup><col>{% for head in table.heads %}<col{% if head.shaded %} class="alt"{% endif %}>{% endfor %}</colgroup>
+{% if table.show_numbers or table.show_headsigns or table.show_notes %}
+<thead>
+{% if table.show_numbers %}
+<tr><td></td>{% for head in table.heads %}<th scope="col">{{ head.number }}</th>{% endfor %}</tr>
+{% endif %}
+{% if table.show_headsigns %}
+<tr class="to"><td></td>{% for s in table.headsigns %}<th scope="col"{% if s.span > 1 %} colspan="{{ s.span }}"{% endif %}{% if s.shaded %} class="alt"{% endif %}>{{ s.text }}</th>{% endfor %}</tr>
+{% endif %}
+{% if table.show_notes %}
+<tr><td></td>{% for head in table.heads %}<th scope="col">{{ head.note }}</th>{% endfor %}</tr>
+{% endif %}
+</thead>
+{% endif %}
+<tbody>
+{% for row in table.rows %}
+{% if row.dwell %}
+<tr class="ar"><th scope="row">{{ stop_name(row) }} <small>ar{% if row.zone %}, {{ row.zone }} time{% endif %}</small></th>
+{% for cell in row.cells %}
+{{ time_cell(table.heads[loop.index0], cell, cell.arrival or cell.time) }}
+{% endfor %}
+</tr>
+<tr class="dp"><th scope="row"><small>dp</small></th>
+{% for cell in row.cells %}
+{{ time_cell(table.heads[loop.index0], cell, cell.time) }}
+{% endfor %}
+</tr>
+{% else %}
+<tr><th scope="row">{{ stop_name(row) }}
+{%- if row.zone %} <small>{{ row.zone }} time</small>{% endif %}</th>
+{% for cell in row.cells %}
+{{ time_cell(table.heads[loop.index0], cell, cell.time) }}
+{% endfor %}
+</tr>
+{% endif %}
+{% endfor %}
+</tbody>
+{% if table.heads | selectattr("every") | list %}
+<tfoot>
+<tr><td></td>{% for head in table.heads %}<td class="every">{{ head.every }}</td>{% endfor %}</tr>
+</tfoot>
+{% endif %}
+</table>
+</div>
+{% if table.legend %}
+<p class="text-sm text-base-content/70">{{ table.legend | join(" ") }}</p>
+{% endif %}
+</div>
+{% endfor %}
+</div>
+</section>
+{% endfor %}
+<div class="flex flex-wrap gap-2">
+<a class="btn btn-sm h-11" href="{{ root }}">All routes</a>
+{% if route.url %}<a class="btn btn-ghost btn-sm h-11" href="{{ route.url }}" target="_blank" rel="noopener">Route page on the agency's site</a>{% endif %}
+</div>
+{% endblock %}

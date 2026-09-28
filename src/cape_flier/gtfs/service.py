@@ -1,0 +1,364 @@
+"""Service calendars to day types (Weekday / Saturday / Sunday / exceptions)."""
+
+from collections import Counter, defaultdict
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
+from datetime import date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
+
+from cape_flier.gtfs.reader import Feed
+
+DAY_NAMES = (
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday",
+)
+
+
+DAY_SECONDS = 24 * 3600
+
+# Date groups whose trip sets share at least this share of their trips (Jaccard)
+# merge into one day type, with notes on the trips that skip some of its dates.
+MERGE_SIMILARITY = 0.8
+
+
+@dataclass(frozen=True, slots=True)
+class DayType:
+    """A set of trips that runs on (nearly) the same dates within the horizon.
+
+    Regular day types are named by the weekdays they usually run on; `extra`
+    lists dates they also run on and `missing` the usual weekdays they skip.
+    Exceptions (regular=False) run only on their listed dates. `partial`
+    gives the dates of trips that do not run on every one of `dates`.
+    """
+
+    name: str
+    regular: bool
+    weekdays: frozenset[int]
+    dates: tuple[date, ...]
+    trip_ids: frozenset[str]
+    extra: tuple[date, ...] = ()
+    missing: tuple[date, ...] = ()
+    partial: tuple[tuple[str, tuple[date, ...]], ...] = ()
+
+    @property
+    def start(self) -> date:
+        return self.dates[0]
+
+    @property
+    def end(self) -> date:
+        return self.dates[-1]
+
+    def trip_dates(self, trip_id: str) -> tuple[date, ...]:
+        return dict(self.partial).get(trip_id, self.dates)
+
+
+def active_services(feed: Feed, day: date) -> set[str]:
+    services = {
+        service_id
+        for service_id, calendar in feed.calendars.items()
+        if calendar.start <= day <= calendar.end and calendar.weekdays[day.weekday()]
+    }
+    for service_id, exceptions in feed.calendar_dates.items():
+        added = exceptions.get(day)
+        if added is True:
+            services.add(service_id)
+        elif added is False:
+            services.discard(service_id)
+    return services
+
+
+def timezone_shift(stop_zone: str, route_zone: str, day: date) -> int:
+    """Seconds to add to route-zone times to read them in the stop's zone."""
+    noon = datetime.combine(day, time(12), ZoneInfo(route_zone))
+    stop_offset = noon.astimezone(ZoneInfo(stop_zone)).utcoffset() or timedelta()
+    route_offset = noon.utcoffset() or timedelta()
+    return int((stop_offset - route_offset).total_seconds())
+
+
+def start_day_offset(feed: Feed, trip_id: str, day: date) -> int:
+    """-1 when a trip's first time, read in its first stop's zone, falls
+    before midnight of its service date (a 00:30 Eastern departure from a
+    Pacific stop leaves at 21:30 the evening before), else 0."""
+    times = feed.stop_times.get(trip_id, ())
+    first = next((st for st in times if st.time is not None), None)
+    if first is None or first.time is None:
+        return 0
+    route_zone = feed.timezone(feed.routes[feed.trips[trip_id].route_id])
+    zone = feed.stop_timezone(first.stop_id)
+    if not zone or zone == route_zone:
+        return 0
+    local = first.time + timezone_shift(zone, route_zone, day)
+    return -1 if local < 0 else 0
+
+
+def first_service_date(feed: Feed) -> date | None:
+    starts = [calendar.start for calendar in feed.calendars.values()]
+    starts += [
+        day
+        for exceptions in feed.calendar_dates.values()
+        for day, added in exceptions.items()
+        if added
+    ]
+    return min(starts, default=None)
+
+
+def horizon_start(feed: Feed, today: date) -> date:
+    """Today, or the feed's first service date when that is later."""
+    first = first_service_date(feed)
+    return max(today, first) if first is not None else today
+
+
+def weekday_name(weekdays: Iterable[int], plural: bool = False) -> str:
+    """'Weekday', 'Monday to Thursday', 'Tuesday and Friday'; with `plural`,
+    'Weekdays', 'Tuesdays and Fridays'."""
+    days = sorted(set(weekdays))
+    s = "s" if plural else ""
+    special = {
+        (0, 1, 2, 3, 4): f"Weekday{s}",
+        (5, 6): f"Weekend{s}",
+        (0, 1, 2, 3, 4, 5, 6): "Daily",
+    }
+    if tuple(days) in special:
+        return special[tuple(days)]
+    if len(days) >= 3 and days == list(range(days[0], days[-1] + 1)):
+        return f"{DAY_NAMES[days[0]]} to {DAY_NAMES[days[-1]]}"
+    names = [DAY_NAMES[day] + s for day in days]
+    if len(names) == 1:
+        return names[0]
+    return f"{', '.join(names[:-1])} and {names[-1]}"
+
+
+def date_label(day: date) -> str:
+    return f"{day:%a} {day:%b} {day.day}"
+
+
+def dates_label(dates: Iterable[date]) -> str:
+    return ", ".join(date_label(day) for day in dates)
+
+
+def date_runs(dates: Iterable[date], within: Sequence[date]) -> list[list[date]]:
+    """`dates` split into runs with no date of `within` missing in between."""
+    wanted = set(dates)
+    runs: list[list[date]] = []
+    current: list[date] = []
+    for day in sorted(within):
+        if day in wanted:
+            current.append(day)
+        elif current:
+            runs.append(current)
+            current = []
+    if current:
+        runs.append(current)
+    return runs
+
+
+def span_label(dates: Iterable[date], within: Sequence[date]) -> str:
+    """Dates as ranges over `within`, e.g. 'Oct 12 to Oct 23, Sat Oct 31';
+    runs of two are listed."""
+    return ", ".join(
+        dates_label(run)
+        if len(run) <= 2
+        else f"{run[0]:%b} {run[0].day} to {run[-1]:%b} {run[-1].day}"
+        for run in date_runs(dates, within)
+    )
+
+
+def exception_name(dates: Sequence[date], horizon: Sequence[date]) -> str:
+    """'Weekday, Oct 12 to Oct 16', 'Sundays, Oct 4 to Oct 18', or a list of
+    dates when no run of them is longer than two."""
+    weekdays = {day.weekday() for day in dates}
+    within = [day for day in horizon if day.weekday() in weekdays]
+    if all(len(run) <= 2 for run in date_runs(dates, within)):
+        return dates_label(dates)
+    name = weekday_name(weekdays, plural=len(weekdays) == 1)
+    return f"{name}, {span_label(dates, within)}"
+
+
+def missing_label(day: DayType) -> str:
+    """The regular weekdays a day type skips, as ranges where they run on."""
+    within = sorted(
+        {d for d in day.dates if d.weekday() in day.weekdays} | set(day.missing)
+    )
+    return span_label(day.missing, within)
+
+
+def trip_note(day: DayType, trip_id: str) -> str:
+    """How a trip's dates differ from its day type's, e.g. 'Fridays only',
+    'From Oct 8', 'Not Oct 12 to Oct 16'; empty when it runs on all of them."""
+    runs = set(day.trip_dates(trip_id))
+    if len(runs) == len(day.dates):
+        return ""
+    weekdays = {d.weekday() for d in runs}
+    if runs == {d for d in day.dates if d.weekday() in weekdays}:
+        return f"{weekday_name(weekdays, plural=True)} only"
+    spans = date_runs(runs, day.dates)
+    if len(spans) == 1 and spans[0][0] == day.start:
+        return f"Until {spans[0][-1]:%b} {spans[0][-1].day}"
+    if len(spans) == 1 and spans[0][-1] == day.end:
+        return f"From {spans[0][0]:%b} {spans[0][0].day}"
+    skipped = [d for d in day.dates if d not in runs]
+    if len(skipped) <= len(runs):
+        return f"Not {span_label(skipped, day.dates)}"
+    return f"Only {span_label(runs, day.dates)}"
+
+
+type TripKey = tuple[object, ...]
+
+
+def trip_key(feed: Feed, trip_id: str) -> TripKey:
+    """What a rider sees of a trip: two trip_ids with the same key are the
+    same trip, as when a feed issues a new trip_id per date range."""
+    trip = feed.trips[trip_id]
+    return (
+        trip.route_id,
+        trip.direction_id,
+        trip.short_name,
+        trip.headsign,
+        tuple(
+            (st.stop_id, st.arrival, st.departure, st.pickup_type, st.drop_off_type)
+            for st in feed.stop_times.get(trip_id, ())
+        ),
+        feed.frequencies.get(trip_id, ()),
+    )
+
+
+def trip_identity(key: TripKey) -> tuple[object, ...]:
+    """Route, direction, number, headsign and first stop and time of a trip
+    key: retimed later stops keep the identity, for comparing trip sets."""
+    route_id, direction_id, short_name, headsign, times, _ = key
+    first = times[0][:3] if times else ()
+    return (route_id, direction_id, short_name, headsign, first)
+
+
+def day_order(day: DayType) -> tuple[bool, int, date]:
+    """Regular day types in weekday order, then exceptions by date."""
+    return (not day.regular, min(day.weekdays) if day.regular else 0, day.start)
+
+
+def similarity(a: frozenset[TripKey], b: frozenset[TripKey]) -> float:
+    """Jaccard similarity of two trip sets by `trip_identity`."""
+    ids_a = {trip_identity(key) for key in a}
+    ids_b = {trip_identity(key) for key in b}
+    union = len(ids_a | ids_b)
+    return len(ids_a & ids_b) / union if union else 1.0
+
+
+def day_types(
+    feed: Feed, trip_ids: Iterable[str], start: date, days: int
+) -> tuple[DayType, ...]:
+    """Group the horizon's dates by the set of trips running on each.
+
+    Trips are compared by `trip_key`, and each day type keeps one trip_id per
+    key. Dates with near-identical sets are clustered (see MERGE_SIMILARITY).
+    The most common cluster on each weekday is that weekday's regular
+    schedule (ties go to the earliest). Clusters that are regular on no
+    weekday become exceptions named by their dates.
+    """
+    # Trips by service and by the day offset from service to local date.
+    trips_by_service: dict[tuple[str, int], set[str]] = defaultdict(set)
+    keys: dict[str, TripKey] = {}
+    for trip_id in trip_ids:
+        shift = start_day_offset(feed, trip_id, start)
+        trips_by_service[feed.trips[trip_id].service_id, shift].add(trip_id)
+        keys[trip_id] = trip_key(feed, trip_id)
+    shifts = sorted({shift for _, shift in trips_by_service})
+
+    signatures: dict[date, frozenset[TripKey]] = {}
+    chosen: dict[TripKey, str] = {}
+    for offset in range(days):
+        day = start + timedelta(days=offset)
+        running = [
+            trip_id
+            for shift in shifts
+            for service_id in active_services(feed, day - timedelta(days=shift))
+            for trip_id in trips_by_service.get((service_id, shift), ())
+        ]
+        for trip_id in sorted(running):
+            chosen.setdefault(keys[trip_id], trip_id)
+        signatures[day] = frozenset(keys[trip_id] for trip_id in running)
+
+    def representatives(signature: Iterable[TripKey]) -> frozenset[str]:
+        return frozenset(chosen[key] for key in signature)
+
+    groups: dict[frozenset[TripKey], list[date]] = defaultdict(list)
+    for day, signature in signatures.items():
+        if signature:
+            groups[signature].append(day)
+
+    # Most dates first, so each cluster is seeded by its commonest trip set.
+    clusters: list[list[frozenset[TripKey]]] = []
+    for signature in sorted(groups, key=lambda s: (-len(groups[s]), groups[s][0])):
+        for cluster in clusters:
+            if similarity(cluster[0], signature) >= MERGE_SIMILARITY:
+                cluster.append(signature)
+                break
+        else:
+            clusters.append([signature])
+    cluster_of = {
+        signature: index
+        for index, cluster in enumerate(clusters)
+        for signature in cluster
+    }
+
+    by_weekday: dict[int, Counter[int]] = defaultdict(Counter)
+    for day, signature in signatures.items():
+        by_weekday[day.weekday()][cluster_of.get(signature, -1)] += 1
+    regular: dict[int, set[int]] = defaultdict(set)
+    for weekday, counts in sorted(by_weekday.items()):
+        index = counts.most_common(1)[0][0]
+        if index >= 0:
+            regular[index].add(weekday)
+
+    horizon = list(signatures)
+    result = []
+    for index, cluster in enumerate(clusters):
+        dates = sorted(day for signature in cluster for day in groups[signature])
+        key_dates: dict[TripKey, list[date]] = defaultdict(list)
+        for day in dates:
+            for key in signatures[day]:
+                key_dates[key].append(day)
+        partial = tuple(
+            sorted(
+                (chosen[key], tuple(runs))
+                for key, runs in key_dates.items()
+                if len(runs) < len(dates)
+            )
+        )
+        common = {
+            "dates": tuple(dates),
+            "trip_ids": representatives(key_dates),
+            "partial": partial,
+        }
+        weekdays = regular.get(index)
+        if weekdays:
+            member = set(dates)
+            result.append(
+                DayType(
+                    name=weekday_name(weekdays),
+                    regular=True,
+                    weekdays=frozenset(weekdays),
+                    extra=tuple(day for day in dates if day.weekday() not in weekdays),
+                    missing=tuple(
+                        day
+                        for day in horizon
+                        if day.weekday() in weekdays and day not in member
+                    ),
+                    **common,
+                )
+            )
+        else:
+            result.append(
+                DayType(
+                    name=exception_name(dates, horizon),
+                    regular=False,
+                    weekdays=frozenset(day.weekday() for day in dates),
+                    **common,
+                )
+            )
+    result.sort(key=day_order)
+    return tuple(result)
