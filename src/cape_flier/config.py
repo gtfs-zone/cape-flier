@@ -93,6 +93,9 @@ class CatalogFeed(BaseModel):
     static_bytes: int | None = Field(None, alias="staticBytes")
     last_modified: str | None = Field(None, alias="lastModified")
     bbox: tuple[float, float, float, float] | None = None
+    # The members' license URLs and Transitland / Mobility Database pages.
+    licenses: tuple[str, ...] = ()
+    catalog_links: tuple[str, ...] = Field((), alias="catalogLinks")
 
 
 def parse_feeds(feeds_doc: dict[str, Any]) -> dict[str, CatalogFeed]:
@@ -108,9 +111,16 @@ class Site(Options):
     feed: str | None = Field(None, pattern=FEED_PATTERN)
     url: str | None = None
     title: str | None = None
+    license_url: str | None = None
     routes: RouteFilter = RouteFilter()
     # The feed's catalog entry, when it is in feeds.json.
     catalog: CatalogFeed | None = None
+
+    def licenses(self) -> tuple[str, ...]:
+        """The configured license URL, else the catalog's."""
+        if self.license_url:
+            return (self.license_url,)
+        return self.catalog.licenses if self.catalog else ()
 
     def download_url(self) -> str:
         """The direct URL, else the catalog's best scheduled URL."""
@@ -131,6 +141,7 @@ class SiteEntry(Options):
     feed: str | None = Field(None, pattern=FEED_PATTERN)
     url: str | None = None
     title: str | None = None
+    license_url: str | None = None
     routes: RouteFilter = RouteFilter()
 
     @model_validator(mode="after")

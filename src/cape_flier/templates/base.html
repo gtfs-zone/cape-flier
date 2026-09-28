@@ -53,6 +53,10 @@
 <footer class="mx-auto max-w-4xl space-y-1 px-4 pb-8 text-sm text-base-content/70">
 {% block footer %}
 <p>Generated <time class="generated" datetime="{{ generated.isoformat() }}">{{ generated.strftime("%b") }} {{ generated.day }}, {{ generated.year }}</time> from the agency's GTFS feed. Check with the agency before you travel.</p>
+{% if source %}
+<p>Schedule data from {% if source.publisher_url %}<a class="link" href="{{ source.publisher_url }}" target="_blank" rel="noopener">{{ source.publisher }}</a>{% else %}{{ source.publisher }}{% endif %}{% if source.download_url %} (<a class="link" href="{{ source.download_url }}" target="_blank" rel="nofollow noopener">GTFS feed</a>){% endif %}{% if source.licenses %}, licensed under {% for url in source.licenses %}<a class="link" href="{{ url }}" target="_blank" rel="noopener">{% if loop.length > 1 %}license {{ loop.index }}{% else %}the publisher's license{% endif %}</a>{% if not loop.last %}, {% endif %}{% endfor %}{% else %}, on the publisher's terms{% endif %}.</p>
+{% if source.catalog_links %}<p>Listed in {% for url in source.catalog_links %}<a class="link" href="{{ url }}" target="_blank" rel="noopener">{{ "Transitland" if "transit.land" in url else "the Mobility Database" }}</a>{% if not loop.last %}, {% endif %}{% endfor %}.</p>{% endif %}
+{% endif %}
 <p><a class="link" href="{{ root }}../">sites.gtfs.zone</a></p>
 {% endblock %}
 <p>More GTFS tools at <a class="link" href="https://gtfs.zone" target="_blank" rel="noopener">gtfs.zone</a></p>

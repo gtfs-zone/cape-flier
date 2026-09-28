@@ -61,6 +61,12 @@ Stadia styles: `stadia-alidade-smooth`, `stadia-alidade-smooth-dark`,
 `route_ids`, `exclude_route_types` and `exclude_route_ids`. Unknown keys are an
 error.
 
+Every site's footer credits the publisher (from `feed_info.txt`, else the first
+agency), links the GTFS download and the license, and links the feed's
+Transitland and Mobility Database pages. The license comes from `feeds.json`'s
+`licenses`; `license_url` on a site sets or overrides it, and is the only
+source for a `url:` site.
+
 Routes without a valid `route_color` get a color hashed from their `route_id`,
 the same one interlocking and coloring-book use.
 

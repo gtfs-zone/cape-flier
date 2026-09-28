@@ -178,6 +178,37 @@ def test_site_json_country_from_catalog():
     assert summary["subdivision"] == "Oregon"
 
 
+def test_footer_credits_publisher_download_and_catalog_license():
+    feed = CatalogFeed(
+        feedId="f-0123456789",
+        name="Test",
+        urls={"scheduled": ("https://example.org/g.zip",)},
+        licenses=("https://example.org/license",),
+        catalogLinks=("https://www.transit.land/feeds/f-test",),
+    )
+    site = Site(slug="test", feed=feed.feed_id, catalog=feed)
+    home = build_site(fixture_zip("branching"), site, MONDAY)["index.html"].decode()
+    assert 'href="https://example.org/g.zip"' in home
+    assert 'href="https://example.org/license"' in home
+    assert ">Transitland</a>" in home
+
+
+def test_footer_without_a_license_defers_to_the_publisher():
+    home = build("branching")["index.html"]
+    assert "Schedule data from" in home
+    assert "on the publisher's terms" in home
+    assert "Listed in" not in home
+
+
+def test_a_configured_license_wins_over_the_catalog():
+    site = Site(
+        slug="test",
+        url="https://example.org/g.zip",
+        license_url="https://example.org/own-license",
+    )
+    assert site.licenses() == ("https://example.org/own-license",)
+
+
 def test_build_root():
     us = {"country_code": "US", "country": "United States"}
     summaries = [

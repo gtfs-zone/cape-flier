@@ -101,6 +101,7 @@ def build_site(
         "generated": today,
         "brand": brand_colors(site.brand_color),
         "feed_notes": feed_notes,
+        "source": data_source(feed, site),
     }
 
     routes = [
@@ -165,6 +166,26 @@ def build_site(
     files["style.css"] = asset("style.css")
     files["logo.svg"] = asset("logo.svg")
     return files
+
+
+def data_source(feed: Feed, site: Site) -> dict[str, object]:
+    """Who published the feed, where it was downloaded, its license and catalog
+    pages, for the footer."""
+    info = feed.feed_info
+    agency = next(iter(feed.agencies.values()), None)
+    publisher = (info and tidy(info.publisher_name)) or (agency and tidy(agency.name))
+    publisher_url = (info and info.publisher_url) or (agency and agency.url)
+    try:
+        download_url = site.download_url()
+    except LookupError:
+        download_url = ""
+    return {
+        "publisher": publisher or site.slug,
+        "publisher_url": publisher_url or "",
+        "download_url": download_url,
+        "licenses": site.licenses(),
+        "catalog_links": site.catalog.catalog_links if site.catalog else (),
+    }
 
 
 def summary_json(**fields: object) -> bytes:
