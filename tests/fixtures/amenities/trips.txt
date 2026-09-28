@@ -1,0 +1,4 @@
+route_id,service_id,trip_id,trip_headsign,direction_id,bikes_allowed,wheelchair_accessible
+R,DAILY,t1,Charlie,0,1,1
+R,DAILY,t2,Charlie,0,2,1
+R,DAILY,t3,Charlie,0,,1

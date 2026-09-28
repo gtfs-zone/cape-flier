@@ -1,6 +1,7 @@
 """Timetables and routes to plain data the templates render."""
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from datetime import date, datetime, time
 from itertools import groupby
@@ -20,7 +21,6 @@ from cape_flier.strip import (
     endpoint_threshold,
     gutter_width,
     is_endpoint,
-    is_minority,
     lane_x,
     route_graph,
     row_paths,
@@ -79,6 +79,67 @@ def badge_colors(route: Route) -> tuple[str, str] | None:
     return route.color, text_color(route.color, route.text_color)
 
 
+# Basic GTFS route types, then extended ones as (first, last) ranges.
+MODES = {
+    0: "light rail",
+    1: "subway",
+    2: "train",
+    3: "bus",
+    4: "ferry",
+    5: "cable car",
+    6: "gondola",
+    7: "funicular",
+    11: "trolleybus",
+    12: "monorail",
+}
+EXTENDED_MODES = (
+    (100, 199, "train"),
+    (200, 299, "bus"),
+    (400, 499, "subway"),
+    (700, 799, "bus"),
+    (800, 800, "trolleybus"),
+    (900, 999, "light rail"),
+    (1000, 1099, "ferry"),
+    (1300, 1399, "gondola"),
+    (1400, 1499, "funicular"),
+)
+
+
+def mode_name(route_type: int) -> str:
+    """'bus', 'train' and so on for a route type, else 'transit'."""
+    if route_type in MODES:
+        return MODES[route_type]
+    for first, last, name in EXTENDED_MODES:
+        if first <= route_type <= last:
+            return name
+    return "transit"
+
+
+def join_and(items: Sequence[str]) -> str:
+    """'A', 'A and B', 'A, B and C'."""
+    if len(items) < 2:
+        return "".join(items)
+    return f"{', '.join(items[:-1])} and {items[-1]}"
+
+
+def modes_label(modes: list[str]) -> str:
+    """'Bus', 'Bus and train', 'Bus, ferry and train' from mode names."""
+    text = join_and(sorted(set(modes)) or ["transit"])
+    return text[:1].upper() + text[1:]
+
+
+def breadcrumbs(items: list[tuple[str, str]]) -> dict:
+    """schema.org BreadcrumbList from (name, url) pairs, outermost first."""
+    return {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            {"@type": "ListItem", "position": i, "name": name, "item": url}
+            for i, (name, url) in enumerate(items, 1)
+        ],
+    }
+
+
 def brand_colors(color: str | None) -> tuple[str, str] | None:
     """(background, text) for a site's brand color."""
     if color is None:
@@ -92,7 +153,8 @@ class TimeText:
 
     text: str
     pm: bool
-    next_day: bool
+    # Days past the service day: +1 after midnight, -1 the evening before.
+    days: int
 
 
 def clock(seconds: int, time_format: TimeFormat) -> TimeText:
@@ -101,16 +163,19 @@ def clock(seconds: int, time_format: TimeFormat) -> TimeText:
     days, rest = divmod(minutes, 24 * 60)
     hours, minute = divmod(rest, 60)
     if time_format == "24h":
-        return TimeText(f"{hours:02d}:{minute:02d}", False, days > 0)
-    return TimeText(f"{(hours - 1) % 12 + 1}:{minute:02d}", hours >= 12, days > 0)
+        return TimeText(f"{hours:02d}:{minute:02d}", False, days)
+    return TimeText(f"{(hours - 1) % 12 + 1}:{minute:02d}", hours >= 12, days)
 
 
 def clock_label(seconds: int, time_format: TimeFormat) -> str:
     """Clock time with a/p for prose, e.g. '7:30 PM'."""
     shown = clock(seconds, time_format)
-    if time_format == "24h":
-        return shown.text
-    return f"{shown.text} {'PM' if shown.pm else 'AM'}"
+    label = shown.text
+    if time_format == "12h":
+        label += " PM" if shown.pm else " AM"
+    if shown.days:
+        label += f" {shown.days:+d}"
+    return label
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,6 +193,8 @@ class ColumnHead:
     every: str
     shaded: bool
     note: str = ""
+    bikes: bool = False
+    wheelchair: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,7 +214,15 @@ class RowView:
     rail: str = ""
     dot_x: int = 0
     solid: bool = False
-    serves: str = ""
+    wheelchair: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class Key:
+    """A legend entry, led by an icon when `icon` is set."""
+
+    icon: str
+    text: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -159,10 +234,14 @@ class TableView:
     show_headsigns: bool
     show_notes: bool
     rows: tuple[RowView, ...]
-    legend: tuple[str, ...]
+    legend: tuple[Key, ...]
     anchor: str = ""
     trips: int = 0
     gutter: int = 0
+
+    @property
+    def show_amenities(self) -> bool:
+        return any(head.bikes or head.wheelchair for head in self.heads)
 
 
 @dataclass(frozen=True, slots=True)
@@ -172,10 +251,16 @@ class DayView:
     notes: tuple[str, ...]
     tables: tuple[TableView, ...]
     runs: int = 0
+    first: str = ""
+    last: str = ""
 
     @property
     def trips(self) -> int:
         return sum(table.trips for table in self.tables)
+
+    @property
+    def icons(self) -> bool:
+        return any(key.icon for table in self.tables for key in table.legend)
 
 
 @dataclass(frozen=True, slots=True)
@@ -188,6 +273,8 @@ class RouteView:
     days: tuple[str, ...]
     url: str
     desc: str
+    mode: str = "transit"
+    endpoints: tuple[str, str] | None = None
 
     @property
     def line_color(self) -> str | None:
@@ -196,6 +283,10 @@ class RouteView:
     @property
     def title(self) -> str:
         return f"{self.badge} {self.name}" if self.name else self.badge
+
+    @property
+    def days_label(self) -> str:
+        return join_and(self.days)
 
 
 def cell_view(cell: Cell | None, time_format: TimeFormat) -> CellView:
@@ -206,6 +297,8 @@ def cell_view(cell: Cell | None, time_format: TimeFormat) -> CellView:
         mark = "d"
     elif cell.pickup and not cell.drop_off:
         mark = "p"
+    if cell.request:
+        mark += "f"
     if cell.time is None:
         return CellView(None, True, mark)
     arrival = None
@@ -305,21 +398,76 @@ def rail_class(row: RailRow) -> str:
     return " ".join(half for half, on in (("u", row.merges), ("d", row.branches)) if on)
 
 
+# name -> (icon, legend text, feed note when all are 1, feed note when all are 2).
+AMENITIES = {
+    "bikes": (
+        "bike",
+        "Bikes allowed",
+        "Bikes allowed on all trips.",
+        "No bikes on any trip.",
+    ),
+    "trips": (
+        "wheelchair",
+        "Wheelchair accessible trip",
+        "All trips are wheelchair accessible.",
+        "No trips are wheelchair accessible.",
+    ),
+    "stops": (
+        "wheelchair",
+        "Wheelchair accessible stop",
+        "All stops are wheelchair accessible.",
+        "No stops are wheelchair accessible.",
+    ),
+}
+
+
+def feed_amenities(
+    tables: list[Timetable],
+) -> tuple[tuple[str, ...], frozenset[str]]:
+    """(feed notes, amenities to mark with icons) over every table: a note
+    when all trips or stops are 1 or all 2, icons when they differ."""
+    values = {
+        "bikes": {column.bikes for table in tables for column in table.columns},
+        "trips": {column.wheelchair for table in tables for column in table.columns},
+        "stops": {row.wheelchair for table in tables for row in table.rows},
+    }
+    notes = []
+    marked = set()
+    for name, found in values.items():
+        _, _, yes, no = AMENITIES[name]
+        if found == {1}:
+            notes.append(yes)
+        elif found == {2}:
+            notes.append(no)
+        elif 1 in found:
+            marked.add(name)
+    return tuple(notes), frozenset(marked)
+
+
 def table_view(
-    feed: Feed, table: Timetable, time_format: TimeFormat, anchor: str = ""
+    feed: Feed,
+    table: Timetable,
+    time_format: TimeFormat,
+    anchor: str = "",
+    marked: frozenset[str] = frozenset(),
 ) -> TableView:
     notes = [trip_note(table.day_type, column.trip_id) for column in table.columns]
     letters = {
         note: chr(ord("A") + i)
         for i, note in enumerate(dict.fromkeys(note for note in notes if note))
     }
+    shown = [i for i, row in enumerate(table.rows) if row.timepoint]
     heads = tuple(
-        replace(column_head(column, time_format, shaded), note=letters.get(note, ""))
+        replace(
+            column_head(column, time_format, shaded),
+            note=letters.get(note, ""),
+            bikes="bikes" in marked and column.bikes == 1,
+            wheelchair="trips" in marked and column.wheelchair == 1,
+        )
         for column, shaded, note in zip(
             table.columns, hour_shading(table.columns), notes, strict=True
         )
     )
-    shown = [i for i, row in enumerate(table.rows) if row.timepoint]
     # Each column's served rows, indexed among the shown rows.
     patterns = [
         [k for k, i in enumerate(shown) if column.cells[i] is not None]
@@ -341,11 +489,7 @@ def table_view(
             rail=rail_class(graph.rows[k]),
             dot_x=lane_x(graph.rows[k].lane),
             solid=is_endpoint(stats[k], threshold),
-            serves=(
-                f"{stats[k].serves} of {total} trips"
-                if is_minority(stats[k], total)
-                else ""
-            ),
+            wheelchair="stops" in marked and table.rows[i].wheelchair == 1,
         )
         for k, i in enumerate(shown)
     )
@@ -353,18 +497,34 @@ def table_view(
     legend = [f"{letter}: {note}." for note, letter in letters.items()]
     if time_format == "12h" and any(c.time and c.time.pm for c in cells):
         legend.append("PM times are in bold.")
-    if any(c.time and c.time.next_day for c in cells):
+    shown_times = [t for c in cells for t in (c.time, c.arrival) if t]
+    days = {t.days for t in shown_times if t.days}
+    if days == {1}:
         legend.append("+1: after midnight, the next day.")
+    elif any(d > 0 for d in days):
+        legend.append("+n: after midnight, n days later.")
+    if any(d < 0 for d in days):
+        legend.append("-1: the evening before.")
     if any(c.untimed for c in cells):
         legend.append("|: stops here, no scheduled time.")
-    if any(c.mark == "d" for c in cells):
+    if any("d" in c.mark for c in cells):
         legend.append("d: drop off only.")
-    if any(c.mark == "p" for c in cells):
+    if any("p" in c.mark for c in cells):
         legend.append("p: pick up only.")
+    if any("f" in c.mark for c in cells):
+        legend.append("f: flag stop, stops only on request.")
     if any(c.arrival for c in cells):
         legend.append("Two times: arrives, then departs.")
-    if any(row.solid for row in rows[1:-1]):
-        legend.append("Filled dot: trips start or end here.")
+    shown_icons = {
+        "bikes": any(head.bikes for head in heads),
+        "trips": any(head.wheelchair for head in heads),
+        "stops": any(row.wheelchair for row in rows),
+    }
+    keys = [
+        Key(icon, text)
+        for name, (icon, text, _, _) in AMENITIES.items()
+        if shown_icons[name]
+    ]
     headsigns = [tidy(h) for h in table.headsigns]
     # Trip numbers repeated on every trip (often the route name) add nothing.
     return TableView(
@@ -375,7 +535,7 @@ def table_view(
         show_headsigns=len({head.headsign for head in heads}) > 1,
         show_notes=bool(letters),
         rows=rows,
-        legend=tuple(legend),
+        legend=(*keys, *(Key("", text) for text in legend)),
         anchor=anchor,
         trips=len(table.columns),
         gutter=gutter_width(graph.lane_count),
@@ -400,8 +560,37 @@ def runs(table: Timetable) -> int:
     return sum(len(table.day_type.trip_dates(c.trip_id)) for c in table.columns)
 
 
+def trip_span(tables: list[Timetable]) -> tuple[int, int] | None:
+    """Earliest and latest trip start over the tables; a frequency column's
+    last start is the last headway before its end."""
+    starts = []
+    for table in tables:
+        for column in table.columns:
+            if (headway := column.headway) is not None:
+                gap = headway.headway_secs
+                last = headway.start + (headway.end - headway.start - 1) // gap * gap
+                starts += [headway.start, max(headway.start, last)]
+            elif (first := column.first_time()) is not None:
+                starts.append(first)
+    return (min(starts), max(starts)) if starts else None
+
+
+def endpoints(tables: list[Timetable]) -> tuple[str, str] | None:
+    """First and last timepoint names of the busiest table, when they differ."""
+    if not tables:
+        return None
+    busiest = max(tables, key=runs)
+    names = [tidy(row.name) for row in busiest.rows if row.timepoint]
+    if len(names) < 2 or names[0] == names[-1]:
+        return None
+    return names[0], names[-1]
+
+
 def day_views(
-    feed: Feed, tables: list[Timetable], time_format: TimeFormat
+    feed: Feed,
+    tables: list[Timetable],
+    time_format: TimeFormat,
+    marked: frozenset[str] = frozenset(),
 ) -> list[DayView]:
     """Tables grouped by day type, busiest first by runs over the horizon;
     within a day, busiest table first."""
@@ -417,16 +606,19 @@ def day_views(
             anchor += "-2"
         anchors.add(anchor)
         group = sorted(by_day[day], key=lambda t: (-runs(t), t.direction_id or 0))
+        span = trip_span(group)
         views.append(
             DayView(
                 anchor=anchor,
                 name=day.name,
                 notes=day_notes(day),
                 tables=tuple(
-                    table_view(feed, t, time_format, f"{anchor}-{i + 1}")
+                    table_view(feed, t, time_format, f"{anchor}-{i + 1}", marked)
                     for i, t in enumerate(group)
                 ),
                 runs=day_runs[day],
+                first=clock_label(span[0], time_format) if span else "",
+                last=clock_label(span[1], time_format) if span else "",
             )
         )
     return views
@@ -466,6 +658,8 @@ def route_view(
         days=tuple(days),
         url=route.url,
         desc=tidy(route.desc),
+        mode=mode_name(route.route_type),
+        endpoints=endpoints(tables),
     )
 
 

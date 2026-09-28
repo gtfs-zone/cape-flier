@@ -60,12 +60,19 @@ def test_format_time():
     assert format_time(24 * 3600 + 10 * 60, "12h") == "12:10a+1"
     assert format_time(25 * 3600 + 10 * 60 + 59, "24h") == "01:10+1"
     assert format_time(18 * 3600, "24h") == "18:00"
+    assert format_time(49 * 3600 + 10 * 60, "24h") == "01:10+2"
+    assert format_time(-30 * 60, "12h") == "11:30p-1"
 
 
 def test_overnight_sorted_and_marked_next_day():
     (table,) = tables("overnight", timepoints="all")
     assert [c.trip_id for c in table.columns] == ["early", "noon", "late"]
     assert times(table)[-1][:2] == ["11:40p", "11:55p"]
+
+
+def test_multiday_marks_each_day():
+    (table,) = tables("multiday", timepoints="all")
+    assert times(table) == [["10:00p", "11:30p+1", "2:10a+2"]]
 
 
 def test_stop_timezone_shifts_times():
@@ -153,3 +160,23 @@ def test_platforms_merge_into_their_station():
     types = day_types(feed, feed.trips, MONDAY, 7)
     (table,) = route_timetables(feed, "R", types)
     assert [row.name for row in table.rows] == ["Alpha", "Central", "Bravo", "Charlie"]
+
+
+def test_amenities_carried_to_columns_rows_and_cells():
+    (table,) = tables("amenities", timepoints="all")
+    assert [c.bikes for c in table.columns] == [1, 2, 0]
+    assert [c.wheelchair for c in table.columns] == [1, 1, 1]
+    assert [r.wheelchair for r in table.rows] == [1, 2, 1]
+    requests = [[bool(c and c.request) for c in col.cells] for col in table.columns]
+    assert requests == [[False] * 3, [False, True, False], [False, True, False]]
+
+
+def test_station_with_mixed_platforms_is_unknown():
+    files = fixture_files("amenities")
+    files["stops.txt"] = files["stops.txt"].replace(
+        "STA2,Station Track 2,42.0,-73.0,0,STA,0",
+        "STA2,Station Track 2,42.0,-73.0,0,STA,2",
+    )
+    feed = read_feed(make_zip(files))
+    (table,) = route_timetables(feed, "R", day_types(feed, feed.trips, MONDAY, 7))
+    assert table.rows[0].wheelchair == 0

@@ -1,7 +1,9 @@
 """build_site: the only entry point from a GTFS zip to a site's files."""
 
+import hashlib
 import io
 import json
+import re
 import zipfile
 from datetime import date
 from importlib.metadata import version
@@ -12,7 +14,10 @@ from cape_flier.gtfs.service import day_types, horizon_start
 from cape_flier.maps.svg import route_map, system_map
 from cape_flier.pages import (
     brand_colors,
+    breadcrumbs,
     day_views,
+    feed_amenities,
+    modes_label,
     route_labels,
     route_slugs,
     route_view,
@@ -24,6 +29,15 @@ from cape_flier.timetable import Timetable, route_timetables
 
 BASE_URL = "https://sites.gtfs.zone"
 LIST_URL = "https://list.gtfs.zone"
+ROOT_TITLE = "sites.gtfs.zone"
+# The footer's build date, as base.html marks it up.
+GENERATED = re.compile(rb'<time class="generated"[^>]*>.*?</time>')
+
+
+def page_digest(body: bytes) -> str:
+    """sha256 of a page without its build date, so it changes only with the
+    page's content."""
+    return hashlib.sha256(GENERATED.sub(b"", body)).hexdigest()
 
 
 def is_bus(route_type: int) -> bool:
@@ -81,11 +95,15 @@ def build_site(
     slugs = route_slugs([route for route, _ in timetables], labels)
     agencies = list(feed.agencies.values())
     base_url = f"{BASE_URL}/{site.slug}/"
+    feed_notes, marked = feed_amenities(
+        [table for _, tables in timetables for table in tables]
+    )
     common = {
         "site_title": site.title or (tidy(agencies[0].name) if agencies else site.slug),
         "base_url": base_url,
         "generated": today,
         "brand": brand_colors(site.brand_color),
+        "feed_notes": feed_notes,
     }
 
     routes = [
@@ -105,15 +123,18 @@ def build_site(
         if maps
         else ""
     )
+    trail = [(ROOT_TITLE, f"{BASE_URL}/"), (common["site_title"], base_url)]
     files = {
         "index.html": render(
             "index.html",
             **common,
             agencies=agencies,
             routes=routes,
+            modes=modes_label([view.mode for view in routes]),
             map=home_map,
             valid_through=through,
             feed_url=f"{LIST_URL}/#feed={site.feed}" if site.feed else "",
+            jsonld=breadcrumbs(trail),
             root="",
         )
     }
@@ -128,7 +149,8 @@ def build_site(
             **common,
             route=view,
             map=route_svg,
-            days=day_views(feed, tables, site.time_format),
+            days=day_views(feed, tables, site.time_format, marked),
+            jsonld=breadcrumbs([*trail, (view.title, f"{base_url}{view.slug}/")]),
             root="../",
         )
     files["site.json"] = summary_json(
@@ -141,12 +163,6 @@ def build_site(
     )
     files["style.css"] = asset("style.css")
     files["logo.svg"] = asset("logo.svg")
-    files["sitemap.xml"] = render(
-        "sitemap.xml",
-        base_url=base_url,
-        paths=["", *(f"{view.slug}/" for view in routes)],
-        generated=today,
-    )
     return files
 
 
@@ -155,9 +171,30 @@ def summary_json(**fields: object) -> bytes:
     return json.dumps(fields, indent=2).encode() + b"\n"
 
 
-def build_root(summaries: list[dict], today: date) -> dict[str, bytes]:
-    """The bucket root: index of every site, sitemap index, robots.txt and the
-    error page. `summaries` are the sites' site.json contents. No I/O."""
+def sitemap_urls(pages: dict[str, dict[str, str]]) -> list[tuple[str, str]]:
+    """(url, lastmod) for each site's pages, from {slug: {path: YYYY-MM-DD}}."""
+    urls = []
+    for slug in sorted(pages):
+        # The site's index first, then its routes.
+        for path, modified in sorted(
+            pages[slug].items(), key=lambda item: (item[0] != "index.html", item[0])
+        ):
+            if path == "index.html" or path.endswith("/index.html"):
+                urls.append(
+                    (f"{BASE_URL}/{slug}/{path[: -len('index.html')]}", modified)
+                )
+    return urls
+
+
+def build_root(
+    summaries: list[dict],
+    today: date,
+    pages: dict[str, dict[str, str]] | None = None,
+    indexnow_key: str | None = None,
+) -> dict[str, bytes]:
+    """The bucket root: index of every site, sitemap, robots.txt and the error
+    page. `summaries` are the sites' site.json contents and `pages` each site's
+    page paths with the date they last changed. No I/O."""
     sites = sorted(
         (
             summary
@@ -171,23 +208,33 @@ def build_root(summaries: list[dict], today: date) -> dict[str, bytes]:
         key=lambda summary: summary["title"].casefold(),
     )
     common = {
-        "site_title": "sites.gtfs.zone",
+        "site_title": ROOT_TITLE,
         "base_url": f"{BASE_URL}/",
         "generated": today,
         "brand": None,
         "version": version("cape-flier"),
     }
-    return {
-        "index.html": render("root.html", **common, sites=sites, root=""),
+    website = {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "name": ROOT_TITLE,
+        "url": f"{BASE_URL}/",
+    }
+    files = {
+        "index.html": render(
+            "root.html", **common, sites=sites, jsonld=website, root=""
+        ),
         "error.html": render("error.html", **common, root="/"),
         "style.css": asset("style.css"),
         "logo.svg": asset("logo.svg"),
         "sitemap.xml": render(
-            "sitemap-index.xml",
-            sitemaps=[f"{BASE_URL}/{s['slug']}/sitemap.xml" for s in sites],
-            generated=today,
+            "sitemap.xml",
+            urls=[(f"{BASE_URL}/", None), *sitemap_urls(pages or {})],
         ),
         "robots.txt": (
             f"User-agent: *\nAllow: /\nSitemap: {BASE_URL}/sitemap.xml\n"
         ).encode(),
     }
+    if indexnow_key:
+        files[f"{indexnow_key}.txt"] = indexnow_key.encode()
+    return files

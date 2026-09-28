@@ -67,6 +67,11 @@
 .timetable td.dw > span { display: block; font-weight: 400; opacity: .7; }
 .timetable td.dw > span.pm { font-weight: 700; }
 
+/* Stroke icons from the page's sprite, sized to the text */
+.icon { display: inline-block; width: 1.1em; height: 1.1em; vertical-align: -.2em; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.icon + .icon { margin-left: .2em; }
+.timetable thead tr.amenities th { padding-block: .2rem; }
+
 /* Maps */
 .map { display: block; width: 100%; max-width: 36rem; height: auto; margin: 0 auto; }
 .map path { fill: none; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }

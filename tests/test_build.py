@@ -5,7 +5,7 @@ from datetime import date
 import pytest
 from conftest import fixture_files, fixture_zip, make_zip
 
-from cape_flier.build import build_root, build_site
+from cape_flier.build import build_root, build_site, page_digest
 from cape_flier.config import Site
 
 MONDAY = date(2026, 10, 5)
@@ -23,7 +23,6 @@ def test_site_files():
         "index.html",
         "4/index.html",
         "site.json",
-        "sitemap.xml",
         "style.css",
         "logo.svg",
     }
@@ -31,7 +30,6 @@ def test_site_files():
     assert "Test &amp; Co</h1>" in home
     assert 'href="4/">' in home
     assert '<link rel="canonical" href="https://sites.gtfs.zone/test/">' in home
-    assert "<loc>https://sites.gtfs.zone/test/4/</loc>" in files["sitemap.xml"]
 
 
 def test_route_page_has_timetable():
@@ -46,6 +44,13 @@ def test_24h_times_not_bold():
     page = build("overnight", time_format="24h")["1/index.html"]
     assert "<td>23:40</td>" in page
     assert 'class="pm"' not in page
+
+
+def test_multiday_markers_and_legend():
+    page = build("multiday")["1/index.html"]
+    assert "11:30<sup>+1</sup>" in page
+    assert "2:10<sup>+2</sup>" in page
+    assert "+n: after midnight, n days later." in page
 
 
 def test_frequency_column_footer():
@@ -69,7 +74,6 @@ def test_site_with_brand_and_basemap():
         "index.html",
         "4/index.html",
         "site.json",
-        "sitemap.xml",
         "style.css",
         "logo.svg",
     }
@@ -126,14 +130,14 @@ def test_arrival_and_departure_share_a_cell_on_dwells():
     assert "Two times: arrives, then departs." in page
 
 
-def test_rail_branches_and_counts_minority_stops():
+def test_rail_branches():
     page = build("branching")["4/index.html"]
     # Alpha-bound trips split at Delta: via Charlie or via Echo.
     delta = re.search(r'<th scope="row">.*?Delta</a>', page)[0]
     assert "C20,80 34,70 34,100" in delta
     echo = re.search(r'<th scope="row">[^\n]*?Echo</a>[^\n]*?</th>', page)[0]
     charlie = re.search(r'<th scope="row">[^\n]*?Charlie</a>[^\n]*?</th>', page)[0]
-    assert 'style="left:20px"' in echo and "<small>1 of 3 trips</small>" in echo
+    assert 'style="left:20px"' in echo and "<small>" not in echo
     assert 'style="left:34px"' in charlie
     # Straight single-lane rows are drawn by CSS, with no SVG.
     assert '<span class="rail d" aria-hidden="true"><span class="dot solid"' in page
@@ -162,7 +166,10 @@ def test_build_root():
             "valid_through": "2026-12-01",
         },
     ]
-    files = {k: v.decode() for k, v in build_root(summaries, MONDAY).items()}
+    pages = {"a": {"index.html": "2026-09-01", "r/index.html": "2026-10-05"}}
+    files = {
+        k: v.decode() for k, v in build_root(summaries, MONDAY, pages, "k3y").items()
+    }
     assert set(files) == {
         "index.html",
         "error.html",
@@ -170,6 +177,7 @@ def test_build_root():
         "logo.svg",
         "sitemap.xml",
         "robots.txt",
+        "k3y.txt",
     }
     home = files["index.html"]
     assert home.index('href="a/"') < home.index('href="b/"')
@@ -179,6 +187,82 @@ def test_build_root():
     assert 'href="https://gtfs.zone" target="_blank"' in home
     assert 'cape-flier" target="_blank" rel="noopener">cape-flier</a>' in home
     assert '<link rel="stylesheet" href="/style.css">' in files["error.html"]
-    assert "<loc>https://sites.gtfs.zone/a/sitemap.xml</loc>" in files["sitemap.xml"]
+    sitemap = files["sitemap.xml"]
+    assert "<url><loc>https://sites.gtfs.zone/</loc></url>" in sitemap
+    assert (
+        "<loc>https://sites.gtfs.zone/a/</loc><lastmod>2026-09-01</lastmod>" in sitemap
+    )
+    assert (
+        "<loc>https://sites.gtfs.zone/a/r/</loc><lastmod>2026-10-05</lastmod>"
+        in sitemap
+    )
+    assert files["k3y.txt"] == "k3y"
+    assert '<meta name="robots" content="noindex">' in files["error.html"]
+    assert '"@type": "WebSite"' in home
     assert "Sitemap: https://sites.gtfs.zone/sitemap.xml" in files["robots.txt"]
     assert summaries[1]["valid_through"] == "2026-12-01"
+
+
+def json_ld(page: str) -> dict:
+    match = re.search(r'<script type="application/ld\+json">(.*?)</script>', page)
+    assert match
+    return json.loads(match.group(1))
+
+
+def test_route_page_seo():
+    files = build("overnight", title="Test & Co")
+    page = files["1/index.html"]
+    assert "<title>1 Night Owl bus schedule - Test &amp; Co</title>" in page
+    assert (
+        '<meta name="description" content="1 Night Owl bus schedule between Alpha'
+        " and Charlie: Daily. Times at each stop and first and last trips, from"
+        ' Test &amp; Co.">'
+    ) in page
+    assert '<meta property="og:title" content="1 Night Owl bus schedule' in page
+    assert '<meta property="og:url" content="https://sites.gtfs.zone/test/1/">' in page
+    assert (
+        "The 1 Night Owl bus route runs between Alpha and Charlie, with Daily"
+        " timetables.</p>"
+    ) in page
+    assert "First trip starts at 6:00 AM, last at 11:40 PM.</p>" in page
+    crumbs = json_ld(page)["itemListElement"]
+    assert [c["item"] for c in crumbs] == [
+        "https://sites.gtfs.zone/",
+        "https://sites.gtfs.zone/test/",
+        "https://sites.gtfs.zone/test/1/",
+    ]
+    assert crumbs[1]["name"] == "Test & Co"
+    home = files["index.html"]
+    assert "<title>Test &amp; Co schedules and timetables</title>" in home
+    assert 'content="Bus schedules for Test &amp; Co: timetables for 1 route,' in home
+    assert len(json_ld(home)["itemListElement"]) == 2
+
+
+def test_page_digest_ignores_build_date():
+    site = Site(slug="test", url="https://example.org/g.zip")
+    body = fixture_zip("overnight")
+    monday = build_site(body, site, today=MONDAY)["1/index.html"]
+    tuesday = build_site(body, site, today=date(2026, 10, 6))["1/index.html"]
+    assert monday != tuesday
+    assert page_digest(monday) == page_digest(tuesday)
+    assert page_digest(monday) != page_digest(monday.replace(b"11:40", b"11:45"))
+
+
+def test_amenity_icons_and_feed_notes():
+    files = build("amenities")
+    page = files["7/index.html"]
+    assert page.count('<symbol id="i-bike"') == 1
+    assert 'aria-label="Bikes allowed"><use href="#i-bike"/>' in page
+    assert "f</sup>" in page
+    assert "<li>f: flag stop, stops only on request.</li>" in page
+    # Every trip in the feed is accessible: said once, not marked per trip.
+    for path in ("index.html", "7/index.html"):
+        assert "All trips are wheelchair accessible.</p>" in files[path]
+    assert "Wheelchair accessible trip." not in page
+    assert "Filled dot" not in page
+
+
+def test_no_icons_without_amenity_data():
+    page = build("branching")["4/index.html"]
+    assert "<symbol" not in page
+    assert "amenities" not in page

@@ -31,6 +31,8 @@ class Cell:
     departure: int | None
     pickup: bool = True
     drop_off: bool = True
+    # Stops only on request: a flag stop.
+    request: bool = False
 
     @property
     def time(self) -> int | None:
@@ -53,6 +55,9 @@ class Column:
     headsign: str
     cells: tuple[Cell | None, ...]
     headway: Headway | None = None
+    # GTFS bikes_allowed and wheelchair_accessible: 0 unknown, 1 yes, 2 no.
+    bikes: int = 0
+    wheelchair: int = 0
 
     def first_time(self) -> int | None:
         return next((c.time for c in self.cells if c and c.time is not None), None)
@@ -64,6 +69,8 @@ class Row:
     name: str
     timepoint: bool
     timezone: str | None = None
+    # wheelchair_boarding shared by every stop served here, else 0.
+    wheelchair: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -312,12 +319,14 @@ def build_timetable(
 
     columns = []
     flagged: set[int] = set()
+    boarding: list[set[int]] = [set() for _ in merged]
     for trip in trips:
         times = stop_times[trip.trip_id]
         rows = positions[tuple(feed.station(st.stop_id) for st in times)]
-        flagged |= {
-            row for row, st in zip(rows, times, strict=True) if st.timepoint == 1
-        }
+        for row, st in zip(rows, times, strict=True):
+            if st.timepoint == 1:
+                flagged.add(row)
+            boarding[row].add(feed.wheelchair_boarding(st.stop_id))
         # Trips starting before local midnight run on the previous local day.
         day_shift = -start_day_offset(feed, trip.trip_id, day_type.start) * DAY_SECONDS
         for headway, offset in trip_columns(feed, trip):
@@ -328,6 +337,7 @@ def build_timetable(
                     departure=st.departure,
                     pickup=st.pickup_type != 1,
                     drop_off=st.drop_off_type != 1,
+                    request=3 in (st.pickup_type, st.drop_off_type),
                 )
                 cells[row] = shifted(cell, offset + shifts[row] + day_shift)
             columns.append(
@@ -337,6 +347,8 @@ def build_timetable(
                     headsign=headsign(feed, trip),
                     cells=tuple(cells),
                     headway=headway,
+                    bikes=trip.bikes_allowed,
+                    wheelchair=trip.wheelchair_accessible,
                 )
             )
     columns.sort(key=cmp_to_key(compare_columns))
@@ -365,6 +377,7 @@ def build_timetable(
                 name=feed.stops[stop_id].name if stop_id in feed.stops else stop_id,
                 timepoint=row in chosen,
                 timezone=zones[row],
+                wheelchair=next(iter(boarding[row])) if len(boarding[row]) == 1 else 0,
             )
             for row, stop_id in enumerate(merged)
         ),
@@ -402,10 +415,10 @@ def route_timetables(
 
 
 def format_time(seconds: int, time_format: TimeFormat) -> str:
-    """Clock time; times past midnight get a '+1' next-day marker."""
+    """Clock time with a day marker: '+n' past midnight, '-n' before."""
     days, rest = divmod(seconds // 60, 24 * 60)
     hours, minutes = divmod(rest, 60)
-    marker = f"+{days}" if days else ""
+    marker = f"{days:+d}" if days else ""
     if time_format == "24h":
         return f"{hours:02d}:{minutes:02d}{marker}"
     suffix = "a" if hours < 12 else "p"

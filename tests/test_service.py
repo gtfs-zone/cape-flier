@@ -152,3 +152,24 @@ def test_trip_starting_before_local_midnight_moves_to_previous_day():
     assert start_day_offset(feed, "late", MONDAY) == -1
     (friday,) = day_types(feed, feed.trips, MONDAY, 14)
     assert friday.dates == (date(2026, 10, 9),)
+
+
+def test_start_day_offset_can_span_two_days():
+    # Kiritimati (UTC+14) to Pago Pago (UTC-11) is 25 hours back.
+    feed = read_feed(
+        make_zip(
+            {
+                "agency.txt": "agency_id,agency_name,agency_url,agency_timezone\n"
+                "a,Test,https://example.org,Pacific/Kiritimati\n",
+                "routes.txt": "route_id,route_short_name,route_type\nR,1,2\n",
+                "stops.txt": "stop_id,stop_name,stop_lat,stop_lon,stop_timezone\n"
+                "S,S,-14,-170,Pacific/Pago_Pago\n",
+                "calendar_dates.txt": "service_id,date,exception_type\n"
+                "SAT,20261010,1\n",
+                "trips.txt": "route_id,service_id,trip_id\nR,SAT,late\n",
+                "stop_times.txt": "trip_id,arrival_time,departure_time,stop_id,"
+                "stop_sequence\nlate,00:30:00,00:30:00,S,1\n",
+            }
+        )
+    )
+    assert start_day_offset(feed, "late", MONDAY) == -2

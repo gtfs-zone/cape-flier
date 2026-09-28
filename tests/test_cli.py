@@ -61,3 +61,6 @@ def test_build_clears_old_files_and_writes_root(tmp_path):
     assert not (out / "gone").exists() and not (out / "local" / "old").exists()
     assert b'href="local/"' in (out / "index.html").read_bytes()
     assert (out / "error.html").exists() and (out / "logo.svg").exists()
+    sitemap = (out / "sitemap.xml").read_text()
+    assert "<loc>https://sites.gtfs.zone/local/1/</loc><lastmod>" in sitemap
+    assert not (out / "local" / "sitemap.xml").exists()

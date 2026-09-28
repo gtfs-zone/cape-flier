@@ -1,7 +1,7 @@
 {% macro badge(route, size="badge-lg") %}
 <span class="badge {{ size }} h-auto min-w-12 whitespace-normal border-0 font-bold{% if not route.colors %} badge-neutral{% endif %}"{% if route.colors %} style="background:#{{ route.colors[0] }};color:#{{ route.colors[1] }}"{% endif %}>{{ route.badge }}</span>
 {%- endmacro %}
-{% macro clock_time(time) %}{{ time.text }}{% if time.next_day %}<sup>+1</sup>{% endif %}{% endmacro %}
+{% macro clock_time(time) %}{{ time.text }}{% if time.days %}<sup>{{ "%+d" % time.days }}</sup>{% endif %}{% endmacro %}
 {% macro time_cell(head, cell) %}
 {%- set classes = [] %}
 {%- if cell.arrival %}{% set _ = classes.append("dw") %}{% endif %}
@@ -11,6 +11,7 @@
 {%- if cell.time %}{{ clock_time(cell.time) }}{% elif cell.untimed %}|{% endif %}
 {%- if cell.mark %}<sup>{{ cell.mark }}</sup>{% endif %}</td>
 {%- endmacro %}
+{% macro icon(name, label="") %}<svg class="icon"{% if label %} role="img" aria-label="{{ label }}"{% else %} aria-hidden="true"{% endif %}><use href="#i-{{ name }}"/></svg>{% endmacro %}
 <!doctype html>
 <html lang="en">
 <head>
@@ -19,6 +20,16 @@
 <title>{% block title %}{% endblock %}</title>
 <meta name="description" content="{% block description %}{% endblock %}">
 <link rel="canonical" href="{% block canonical %}{{ base_url }}{% endblock %}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="sites.gtfs.zone">
+<meta property="og:title" content="{{ self.title() }}">
+<meta property="og:description" content="{{ self.description() }}">
+<meta property="og:url" content="{{ self.canonical() }}">
+<meta name="twitter:card" content="summary">
+{% if jsonld is defined %}
+<script type="application/ld+json">{{ jsonld | tojson }}</script>
+{% endif %}
+{% block head %}{% endblock %}
 <meta name="color-scheme" content="light dark">
 {% if brand %}<meta name="theme-color" content="#{{ brand[0] }}">{% endif %}
 <link rel="icon" type="image/svg+xml" href="{{ root }}logo.svg">
@@ -41,7 +52,7 @@
 </main>
 <footer class="mx-auto max-w-4xl space-y-1 px-4 pb-8 text-sm text-base-content/70">
 {% block footer %}
-<p>Generated {{ generated.strftime("%b") }} {{ generated.day }}, {{ generated.year }} from the agency's GTFS feed. Check with the agency before you travel.</p>
+<p>Generated <time class="generated" datetime="{{ generated.isoformat() }}">{{ generated.strftime("%b") }} {{ generated.day }}, {{ generated.year }}</time> from the agency's GTFS feed. Check with the agency before you travel.</p>
 <p><a class="link" href="{{ root }}../">sites.gtfs.zone</a></p>
 {% endblock %}
 <p>More GTFS tools at <a class="link" href="https://gtfs.zone" target="_blank" rel="noopener">gtfs.zone</a></p>

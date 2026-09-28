@@ -81,9 +81,9 @@ def timezone_shift(stop_zone: str, route_zone: str, day: date) -> int:
 
 
 def start_day_offset(feed: Feed, trip_id: str, day: date) -> int:
-    """-1 when a trip's first time, read in its first stop's zone, falls
-    before midnight of its service date (a 00:30 Eastern departure from a
-    Pacific stop leaves at 21:30 the evening before), else 0."""
+    """Days (<= 0) from a trip's service date back to the local date of its
+    first time, read in its first stop's zone (a 00:30 Eastern departure from
+    a Pacific stop leaves at 21:30 the evening before: -1)."""
     times = feed.stop_times.get(trip_id, ())
     first = next((st for st in times if st.time is not None), None)
     if first is None or first.time is None:
@@ -93,7 +93,7 @@ def start_day_offset(feed: Feed, trip_id: str, day: date) -> int:
     if not zone or zone == route_zone:
         return 0
     local = first.time + timezone_shift(zone, route_zone, day)
-    return -1 if local < 0 else 0
+    return min(0, local // DAY_SECONDS)
 
 
 def first_service_date(feed: Feed) -> date | None:

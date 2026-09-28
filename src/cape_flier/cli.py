@@ -63,9 +63,17 @@ def clear(path: Path) -> None:
 
 
 def write_root(out: Path) -> None:
-    """The bucket root pages from every built site's site.json under `out`."""
+    """The bucket root pages from every built site's site.json under `out`,
+    with each site's pages dated by its build."""
     summaries = [json.loads(p.read_text()) for p in sorted(out.glob("*/site.json"))]
-    write_files(build_root(summaries, date.today()), out)
+    pages = {
+        summary["slug"]: {
+            page.relative_to(out / summary["slug"]).as_posix(): summary["generated"]
+            for page in (out / summary["slug"]).rglob("index.html")
+        }
+        for summary in summaries
+    }
+    write_files(build_root(summaries, date.today(), pages), out)
 
 
 def build(args: argparse.Namespace) -> None:

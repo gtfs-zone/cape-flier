@@ -63,3 +63,20 @@ def test_nested_directory_and_bom():
 def test_missing_required_file():
     with pytest.raises(ValueError, match="stop_times"):
         read_feed(make_zip({"agency.txt": "agency_id\n"}))
+
+
+def test_amenity_columns():
+    feed = read_feed(fixture_zip("amenities"))
+    assert (feed.trips["t1"].bikes_allowed, feed.trips["t3"].bikes_allowed) == (1, 0)
+    assert feed.trips["t2"].wheelchair_accessible == 1
+    assert feed.stops["B"].wheelchair_boarding == 2
+    # A platform with 0 inherits its parent station's value.
+    assert feed.wheelchair_boarding("STA2") == 1
+    assert feed.wheelchair_boarding("missing") == 0
+
+
+def test_amenity_columns_default_to_unknown():
+    feed = read_feed(fixture_zip("branching"))
+    trip = feed.trips["north1"]
+    assert (trip.bikes_allowed, trip.wheelchair_accessible) == (0, 0)
+    assert feed.stops["A"].wheelchair_boarding == 0

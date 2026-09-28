@@ -31,6 +31,7 @@ from dagster import (
 
 from cape_flier.build import BASE_URL, build_site
 from cape_flier.config import FEEDS_URL, USER_AGENT, load_config
+from cape_flier.pipeline import indexnow
 from cape_flier.pipeline.bucket import Bucket, BucketSettings
 from cape_flier.pipeline.heartbeat import push_heartbeat
 from cape_flier.pipeline.publish import (
@@ -70,15 +71,26 @@ def site_pages(context: AssetExecutionContext) -> MaterializeResult:
         url = site.download_url(feeds_doc)
         body, source = download(http, url, previous["source"] if same_day else None)
 
-    if body is None:
-        context.log.info("feed unchanged since today's build, not rebuilding")
-        counts = {"files": len(previous["files"]), "uploaded": 0, "deleted": 0}
-    else:
-        files = build_site(body, site, today)
-        counts = publish_site(bucket, site.slug, files, source, today, VERSION)
-    context.log.info("%s: %s", site.slug, counts)
+        changed: list[str] = []
+        if body is None:
+            context.log.info("feed unchanged since today's build, not rebuilding")
+            counts = {"files": len(previous["files"]), "uploaded": 0, "deleted": 0}
+        else:
+            files = build_site(body, site, today)
+            counts, changed = publish_site(
+                bucket, site.slug, files, source, today, VERSION
+            )
+        context.log.info("%s: %s", site.slug, counts)
 
-    behind = publish_root(bucket, SLUGS, today)
+        # After the root, which serves the IndexNow key file.
+        behind = publish_root(bucket, SLUGS, today, indexnow.KEY)
+        indexnow.ping(
+            http,
+            [
+                f"{BASE_URL}/{site.slug}/{path.removesuffix('index.html')}"
+                for path in changed
+            ],
+        )
     if behind:
         context.log.info("not built today yet: %s", ", ".join(behind))
     else:

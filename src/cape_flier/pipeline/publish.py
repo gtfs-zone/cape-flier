@@ -1,8 +1,9 @@
 """Download a feed and publish built files to the bucket.
 
 Each site lives under `<slug>/` with a `manifest.json` written last, holding
-the build date, the cape-flier version, the feed's source headers and a hash
-per file, so a rebuild uploads only what changed.
+the build date, the cape-flier version, the feed's source headers, a hash per
+file, so a rebuild uploads only what changed, and per page a digest without the
+build date and the date that digest last changed, for the sitemap.
 """
 
 import hashlib
@@ -11,7 +12,7 @@ import logging
 from datetime import date
 from typing import TYPE_CHECKING, Protocol
 
-from cape_flier.build import build_root
+from cape_flier.build import build_root, page_digest
 
 if TYPE_CHECKING:
     import httpx
@@ -54,6 +55,25 @@ def read_manifest(store: Store, slug: str) -> dict | None:
     return json.loads(body) if body else None
 
 
+def page_dates(
+    files: dict[str, bytes], old: dict[str, dict], today: date
+) -> dict[str, dict]:
+    """{path: {digest, modified}} per page, keeping the old date while the
+    digest is unchanged."""
+    pages = {}
+    for path, body in files.items():
+        if not path.endswith(".html"):
+            continue
+        digest = page_digest(body)
+        previous = old.get(path, {})
+        same = previous.get("digest") == digest and previous.get("modified")
+        pages[path] = {
+            "digest": digest,
+            "modified": previous["modified"] if same else today.isoformat(),
+        }
+    return pages
+
+
 def publish_site(
     store: Store,
     slug: str,
@@ -61,9 +81,18 @@ def publish_site(
     source: dict,
     today: date,
     version: str,
-) -> dict[str, int]:
-    """Upload changed files, delete ones no longer built, then the manifest."""
-    old = (read_manifest(store, slug) or {}).get("files", {})
+) -> tuple[dict[str, int], list[str]]:
+    """Upload changed files, delete ones no longer built, then the manifest.
+    Returns counts and the pages whose content changed today."""
+    previous = read_manifest(store, slug) or {}
+    old = previous.get("files", {})
+    old_pages = previous.get("pages", {})
+    pages = page_dates(files, old_pages, today)
+    changed_pages = sorted(
+        path
+        for path, page in pages.items()
+        if old_pages.get(path, {}).get("digest") != page["digest"]
+    )
     hashes = {path: hashlib.sha256(body).hexdigest() for path, body in files.items()}
     changed = [path for path in files if old.get(path) != hashes[path]]
     # Pages last, so a new page never links a stylesheet that is not up yet.
@@ -77,15 +106,20 @@ def publish_site(
         "version": version,
         "source": source,
         "files": hashes,
+        "pages": pages,
     }
     store.put(f"{slug}/{MANIFEST}", json.dumps(manifest, indent=2).encode())
-    return {"files": len(files), "uploaded": len(changed), "deleted": len(stale)}
+    counts = {"files": len(files), "uploaded": len(changed), "deleted": len(stale)}
+    return counts, changed_pages
 
 
-def publish_root(store: Store, slugs: list[str], today: date) -> list[str]:
-    """Rewrite the root pages from each site's site.json and delete sites no
-    longer configured. Returns the slugs not built today."""
+def publish_root(
+    store: Store, slugs: list[str], today: date, indexnow_key: str | None = None
+) -> list[str]:
+    """Rewrite the root pages from each site's site.json and manifest and
+    delete sites no longer configured. Returns the slugs not built today."""
     summaries, behind = [], []
+    pages: dict[str, dict[str, str]] = {}
     for slug in slugs:
         summary = store.get(f"{slug}/site.json")
         if summary:
@@ -93,7 +127,12 @@ def publish_root(store: Store, slugs: list[str], today: date) -> list[str]:
         manifest = read_manifest(store, slug)
         if not manifest or manifest.get("built") != today.isoformat():
             behind.append(slug)
-    files = build_root(summaries, today)
+        if summary and manifest:
+            pages[slug] = {
+                path: page["modified"]
+                for path, page in manifest.get("pages", {}).items()
+            }
+    files = build_root(summaries, today, pages, indexnow_key)
     for path, body in files.items():
         store.put(path, body)
     dropped = {

@@ -47,6 +47,7 @@ class Stop:
     code: str
     timezone: str
     parent_station: str
+    wheelchair_boarding: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,6 +59,8 @@ class Trip:
     short_name: str
     direction_id: int | None
     shape_id: str
+    bikes_allowed: int
+    wheelchair_accessible: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,6 +137,15 @@ class Feed:
         if stop.timezone or not stop.parent_station:
             return stop.timezone
         return self.stop_timezone(stop.parent_station)
+
+    def wheelchair_boarding(self, stop_id: str) -> int:
+        """The stop's wheelchair_boarding, its parent station's when it has 0."""
+        stop = self.stops.get(stop_id)
+        if stop is None:
+            return 0
+        if stop.wheelchair_boarding or stop.parent_station not in self.stops:
+            return stop.wheelchair_boarding
+        return self.stops[stop.parent_station].wheelchair_boarding
 
 
 def parse_time(text: str) -> int | None:
@@ -258,6 +270,7 @@ def read_stops(archive: Archive) -> dict[str, Stop]:
         "stop_code",
         "stop_timezone",
         "parent_station",
+        "wheelchair_boarding",
     )
     return {
         row["stop_id"]: Stop(
@@ -268,6 +281,7 @@ def read_stops(archive: Archive) -> dict[str, Stop]:
             code=row["stop_code"],
             timezone=row["stop_timezone"],
             parent_station=row["parent_station"],
+            wheelchair_boarding=parse_int(row["wheelchair_boarding"]) or 0,
         )
         for row in archive.rows("stops", columns)
     }
@@ -282,6 +296,8 @@ def read_trips(archive: Archive, route_ids: set[str]) -> dict[str, Trip]:
         "trip_short_name",
         "direction_id",
         "shape_id",
+        "bikes_allowed",
+        "wheelchair_accessible",
     )
     return {
         row["trip_id"]: Trip(
@@ -292,6 +308,8 @@ def read_trips(archive: Archive, route_ids: set[str]) -> dict[str, Trip]:
             short_name=row["trip_short_name"],
             direction_id=parse_int(row["direction_id"]),
             shape_id=row["shape_id"],
+            bikes_allowed=parse_int(row["bikes_allowed"]) or 0,
+            wheelchair_accessible=parse_int(row["wheelchair_accessible"]) or 0,
         )
         for row in archive.rows("trips", columns)
         if row["route_id"] in route_ids

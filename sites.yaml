@@ -15,6 +15,7 @@ sites:
     title: Columbia County Public Transportation
   - slug: amtrak
     feed: f-2f033a022e
+    title: Amtrak
     brand_color: 00537E
     routes: { route_types: [2] }
   - slug: mbta-commuter-rail

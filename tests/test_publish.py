@@ -33,7 +33,9 @@ class FakeStore:
 def test_publish_uploads_only_changed_and_deletes_stale():
     store = FakeStore()
     files = {"index.html": b"home", "style.css": b"css", "old/index.html": b"x"}
-    assert publish_site(store, "s", files, {}, TODAY, "1.0.0")["uploaded"] == 3
+    counts, changed = publish_site(store, "s", files, {}, TODAY, "1.0.0")
+    assert counts["uploaded"] == 3
+    assert changed == ["index.html", "old/index.html"]
     assert store.puts == [
         "s/style.css",
         "s/index.html",
@@ -43,8 +45,9 @@ def test_publish_uploads_only_changed_and_deletes_stale():
 
     store.puts.clear()
     files = {"index.html": b"new home", "style.css": b"css"}
-    counts = publish_site(store, "s", files, {"url": "u"}, TODAY, "1.0.1")
+    counts, changed = publish_site(store, "s", files, {"url": "u"}, TODAY, "1.0.1")
     assert counts == {"files": 2, "uploaded": 1, "deleted": 1}
+    assert changed == ["index.html"]
     assert store.puts == ["s/index.html", "s/manifest.json"]
     assert "s/old/index.html" not in store.objects
     manifest = json.loads(store.objects["s/manifest.json"])
@@ -53,12 +56,46 @@ def test_publish_uploads_only_changed_and_deletes_stale():
     assert manifest["source"] == {"url": "u"}
 
 
+def page(day):
+    return f'<p><time class="generated" datetime="{day}">{day}</time></p>'.encode()
+
+
+def test_publish_dates_pages_by_content_change():
+    store = FakeStore()
+    publish_site(store, "s", {"index.html": page("a")}, {}, date(2026, 10, 1), "1")
+    counts, changed = publish_site(
+        store, "s", {"index.html": page("b")}, {}, TODAY, "1"
+    )
+    # The build date alone changes the file but not its content date.
+    assert counts["uploaded"] == 1 and changed == []
+    manifest = json.loads(store.objects["s/manifest.json"])
+    assert manifest["pages"]["index.html"]["modified"] == "2026-10-01"
+
+    _, changed = publish_site(
+        store, "s", {"index.html": page("b") + b"new"}, {}, TODAY, "1"
+    )
+    assert changed == ["index.html"]
+    manifest = json.loads(store.objects["s/manifest.json"])
+    assert manifest["pages"]["index.html"]["modified"] == "2026-10-05"
+
+
+def test_publish_dates_pages_missing_from_an_old_manifest_today():
+    store = FakeStore({"s/manifest.json": json.dumps({"files": {}}).encode()})
+    _, changed = publish_site(store, "s", {"index.html": page("a")}, {}, TODAY, "1")
+    assert changed == ["index.html"]
+
+
 def test_publish_root_lists_sites_and_drops_unconfigured():
     def site(slug, built):
         summary = {"slug": slug, "title": slug.title(), "routes": 1}
         return {
             f"{slug}/site.json": json.dumps(summary).encode(),
-            f"{slug}/manifest.json": json.dumps({"built": built}).encode(),
+            f"{slug}/manifest.json": json.dumps(
+                {
+                    "built": built,
+                    "pages": {"index.html": {"digest": "d", "modified": built}},
+                }
+            ).encode(),
         }
 
     store = FakeStore(
@@ -67,8 +104,14 @@ def test_publish_root_lists_sites_and_drops_unconfigured():
         | site("gone", "2026-10-05")
         | {"old-root.html": b"x"}
     )
-    behind = publish_root(store, ["a", "b"], TODAY)
+    behind = publish_root(store, ["a", "b"], TODAY, "k3y")
     assert behind == ["b"]
+    sitemap = store.objects["sitemap.xml"].decode()
+    assert (
+        "<loc>https://sites.gtfs.zone/b/</loc><lastmod>2026-10-04</lastmod>" in sitemap
+    )
+    assert "gone/" not in sitemap
+    assert store.objects["k3y.txt"] == b"k3y"
     assert b'href="a/"' in store.objects["index.html"]
     assert b'href="gone/"' not in store.objects["index.html"]
     assert not store.list_keys("gone/")

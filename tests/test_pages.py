@@ -11,14 +11,21 @@ from cape_flier.pages import (
     badge_colors,
     brand_colors,
     clock,
+    clock_label,
     day_views,
+    feed_amenities,
     google_link,
     headsign_spans,
+    join_and,
+    mode_name,
+    modes_label,
     route_labels,
     route_slugs,
+    route_view,
     slugify,
     table_title,
 )
+from cape_flier.timetable import Column, Row, Timetable
 
 
 def route(route_id="r", short="", long="", color=None, text=None) -> Route:
@@ -42,12 +49,19 @@ def test_clock_12h_marks_pm_and_next_day():
     assert clock(12 * 3600 + 5 * 60, "12h").text == "12:05"
     assert clock(12 * 3600, "12h").pm
     late = clock(24 * 3600 + 10 * 60, "12h")
-    assert (late.text, late.pm, late.next_day) == ("12:10", False, True)
+    assert (late.text, late.pm, late.days) == ("12:10", False, 1)
 
 
 def test_clock_24h():
     shown = clock(25 * 3600 + 30 * 60, "24h")
-    assert (shown.text, shown.pm, shown.next_day) == ("01:30", False, True)
+    assert (shown.text, shown.pm, shown.days) == ("01:30", False, 1)
+
+
+def test_clock_multiple_days():
+    assert clock(2 * 24 * 3600 + 10 * 60, "24h").days == 2
+    before = clock(-30 * 60, "24h")
+    assert (before.text, before.days) == ("23:30", -1)
+    assert clock_label(49 * 3600, "12h") == "1:00 AM +2"
 
 
 def test_badge_text_falls_back_to_contrasting_color():
@@ -140,3 +154,103 @@ def test_days_sorted_by_runs():
     assert [v.runs for v in views] == sorted((v.runs for v in views), reverse=True)
     assert views[0].runs == 3
     assert [t.anchor for t in views[0].tables] == [f"{views[0].anchor}-1"]
+
+
+def test_mode_names():
+    assert [mode_name(t) for t in (0, 2, 3, 4, 11, 109, 715, 1000, 99)] == [
+        "light rail",
+        "train",
+        "bus",
+        "ferry",
+        "trolleybus",
+        "train",
+        "bus",
+        "ferry",
+        "transit",
+    ]
+    assert modes_label(["bus", "train", "bus"]) == "Bus and train"
+    assert modes_label([]) == "Transit"
+    assert join_and(["A", "B", "C"]) == "A, B and C"
+
+
+def test_endpoints_and_first_and_last_trips():
+    site = Site(slug="t", url="https://example.org/g.zip")
+    feed = site_feed(fixture_zip("overnight"), site)
+    [(night_owl, tables)] = site_timetables(feed, site, date(2026, 10, 5))
+    view = route_view(night_owl, "1", tables)
+    assert view.mode == "bus"
+    assert view.endpoints == ("Alpha", "Charlie")
+    [day] = day_views(feed, tables, "12h")
+    assert (day.first, day.last) == ("6:00 AM", "11:40 PM")
+
+
+def test_frequency_trips_last_start_before_headway_end():
+    site = Site(slug="t", url="https://example.org/g.zip")
+    feed = site_feed(fixture_zip("frequencies"), site)
+    [(_, tables)] = site_timetables(feed, site, date(2026, 10, 5))
+    [day] = day_views(feed, tables, "24h")
+    assert (day.first, day.last) == ("07:00", "17:40")
+
+
+def amenity_table():
+    site = Site(slug="t", url="https://example.org/g.zip")
+    feed = site_feed(fixture_zip("amenities"), site)
+    [(_, tables)] = site_timetables(feed, site, date(2026, 10, 5))
+    _, marked = feed_amenities(tables)
+    [day] = day_views(feed, tables, "12h", marked)
+    [table] = day.tables
+    return day, table
+
+
+def test_flag_stop_marks():
+    _, table = amenity_table()
+    assert [cell.mark for cell in table.rows[1].cells] == ["", "f", "df"]
+    texts = [key.text for key in table.legend]
+    assert "f: flag stop, stops only on request." in texts
+    assert "d: drop off only." in texts
+
+
+def test_mixed_amenities_get_icons_and_keys():
+    day, table = amenity_table()
+    assert day.icons and table.show_amenities
+    assert [head.bikes for head in table.heads] == [True, False, False]
+    assert not any(head.wheelchair for head in table.heads)
+    assert [row.wheelchair for row in table.rows] == [True, False, True]
+    assert [(key.icon, key.text) for key in table.legend if key.icon] == [
+        ("bike", "Bikes allowed"),
+        ("wheelchair", "Wheelchair accessible stop"),
+    ]
+
+
+def timetable(stop, *trips):
+    """One stop with `stop` as its wheelchair_boarding, one column per trip
+    value used for both bikes and wheelchair."""
+    return Timetable(
+        route_id="R",
+        direction_id=0,
+        headsigns=(),
+        day_type=None,
+        rows=(Row("S", "S", True, wheelchair=stop),),
+        columns=tuple(Column("t", "", "", (), bikes=v, wheelchair=v) for v in trips),
+    )
+
+
+def test_feed_amenities():
+    assert feed_amenities([timetable(1, 1), timetable(1, 1)]) == (
+        (
+            "Bikes allowed on all trips.",
+            "All trips are wheelchair accessible.",
+            "All stops are wheelchair accessible.",
+        ),
+        frozenset(),
+    )
+    assert feed_amenities([timetable(2, 2)])[0] == (
+        "No bikes on any trip.",
+        "No trips are wheelchair accessible.",
+        "No stops are wheelchair accessible.",
+    )
+    assert feed_amenities([timetable(0, 0, 2)]) == ((), frozenset())
+    assert feed_amenities([timetable(1, 1), timetable(1, 0)]) == (
+        ("All stops are wheelchair accessible.",),
+        frozenset({"bikes", "trips"}),
+    )

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
-{% block title %}{{ site_title }} timetables{% endblock %}
-{% block description %}Bus and train timetables for {{ site_title }}: {{ routes | length }} routes.{% endblock %}
+{% block title %}{{ site_title }} schedules and timetables{% endblock %}
+{% block description %}{{ modes }} schedules for {{ site_title }}: timetables for {{ routes | length }} route{{ "s" if routes | length != 1 }}, with times at each stop.{% endblock %}
 {% block main %}
 <h1 class="text-3xl font-bold">{{ site_title }}</h1>
 {% if routes %}
@@ -36,6 +36,9 @@
 {% if valid_through %}
 <p>Timetables valid through {{ valid_through.strftime("%B") }} {{ valid_through.day }}, {{ valid_through.year }}.</p>
 {% endif %}
+{% for note in feed_notes %}
+<p>{{ note }}</p>
+{% endfor %}
 {% if feed_url %}
 <p><a class="link" href="{{ feed_url }}" target="_blank" rel="noopener">About this feed on list.gtfs.zone</a></p>
 {% endif %}
