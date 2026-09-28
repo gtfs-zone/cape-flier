@@ -39,7 +39,8 @@ main without a tag do not deploy.
 | `config.py` | Pydantic models for `sites.yaml`; defaults merged into each site |
 | `gtfs/reader.py` | GTFS zip to typed rows, streaming, only needed columns |
 | `gtfs/service.py` | Calendars to day types (Weekday / Saturday / Sunday / exceptions) |
-| `timetable.py` | Route + direction + day type to a `Timetable`, plus a text dump |
+| `timetable.py` | Route + direction + day type to a `Timetable`, plus a text dump; stop order is interlocking's topological sort, falling back to an LCS fold on cycles |
+| `strip.py` | Stop-column rail lanes, endpoints and minority stops, ported from interlocking's `route-graph.ts` / `route-strip.ts` |
 | `build.py` | `build_site(zip_bytes, site) -> {path: bytes}`, the only entry point |
 | `maps/svg.py` | Route and system maps as inline SVG: Web Mercator, Douglas-Peucker, label placement (none on bus-only system maps), basemap tiles |
 | `render.py` | Jinja environment over `templates/` |

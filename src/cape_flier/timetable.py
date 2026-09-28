@@ -4,6 +4,7 @@ from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from functools import cmp_to_key
+from itertools import pairwise
 
 from cape_flier.config import TimeFormat, Timepoints
 from cape_flier.gtfs.reader import Feed, StopTime, Trip
@@ -112,6 +113,56 @@ def merge_sequences(sequences: Sequence[Sequence[str]]) -> list[str]:
             i, j = mi + 1, sj + 1
         merged = result
     return merged
+
+
+def topo_order(
+    sequences: Sequence[Sequence[str]], weights: Sequence[int]
+) -> list[str] | None:
+    """Kahn's algorithm over consecutive-stop edges, as interlocking's
+    route-sequence; None when patterns run opposite ways (a cycle).
+
+    Among ready stops, one the previous stop leads to comes first, so a
+    branch stays contiguous; then lowest trip-weighted mean position."""
+    outgoing: dict[str, dict[str, None]] = {}
+    indegree: dict[str, int] = {}
+    position_sum: dict[str, float] = {}
+    position_weight: dict[str, int] = {}
+    for sequence, weight in zip(sequences, weights, strict=True):
+        span = len(sequence) - 1
+        for j, stop in enumerate(sequence):
+            outgoing.setdefault(stop, {})
+            indegree.setdefault(stop, 0)
+            position_sum[stop] = position_sum.get(stop, 0) + (
+                j / span * weight if span else 0
+            )
+            position_weight[stop] = position_weight.get(stop, 0) + weight
+        for a, b in pairwise(sequence):
+            if b not in outgoing[a]:
+                outgoing[a][b] = None
+                indegree[b] += 1
+
+    def mean(stop: str) -> float:
+        return position_sum[stop] / position_weight[stop]
+
+    ready = [stop for stop, degree in indegree.items() if degree == 0]
+    order: list[str] = []
+    previous: str | None = None
+    while ready:
+        follows = outgoing[previous] if previous is not None else {}
+        pick = min(ready, key=lambda stop: (stop not in follows, mean(stop), stop))
+        ready.remove(pick)
+        order.append(pick)
+        previous = pick
+        for stop in outgoing[pick]:
+            indegree[stop] -= 1
+            if indegree[stop] == 0:
+                ready.append(stop)
+    return order if len(order) == len(indegree) else None
+
+
+def stop_order(patterns: Sequence[Sequence[str]], weights: Sequence[int]) -> list[str]:
+    """Every pattern's stops in one order, each stop once where possible."""
+    return topo_order(patterns, weights) or merge_sequences(patterns)
 
 
 def compare_columns(a: Column, b: Column) -> int:
@@ -245,7 +296,7 @@ def build_timetable(
     ]
     counts = Counter(sequences)
     patterns = sorted(counts, key=lambda s: (-counts[s], -len(s)))
-    merged = merge_sequences(patterns)
+    merged = stop_order(patterns, [counts[p] for p in patterns])
     positions = {
         pattern: [mi for mi, _ in lcs_pairs(merged, pattern)] for pattern in patterns
     }

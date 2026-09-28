@@ -140,8 +140,8 @@ def test_maps_use_shapes_when_present():
 
 def test_map_none_leaves_maps_out():
     files = build(fixture_files("branching"), map="none")
-    assert "<svg" not in files["index.html"]
-    assert "<svg" not in files["4/index.html"]
+    assert "<svg class=" not in files["index.html"]
+    assert "<svg class=" not in files["4/index.html"]
 
 
 def test_tiles_cover_the_map_box():

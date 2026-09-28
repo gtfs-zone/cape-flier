@@ -9,6 +9,7 @@ from cape_flier.timetable import (
     lcs_pairs,
     merge_sequences,
     route_timetables,
+    stop_order,
     to_text,
 )
 
@@ -38,6 +39,18 @@ def test_merge_inserts_missing_stops_in_order():
     assert merge_sequences(["BCD", "ABC"]) == list("ABCD")
     assert merge_sequences(["ABCA", "BCA"]) == list("ABCA")
     assert merge_sequences([]) == []
+
+
+def test_stop_order_keeps_each_stop_once_and_branches_contiguous():
+    # A fold would repeat stops here; the topological order does not.
+    patterns = ["ABCDE", "ACE", "BXYD", "ABCDEZ"]
+    order = stop_order(patterns, [5, 3, 1, 1])
+    assert sorted(order) == sorted(set("ABCDEXYZ"))
+    for pattern in patterns:
+        assert [s for s in order if s in pattern] == list(pattern)
+    assert "".join(order).find("XY") >= 0
+    # Opposite directions are a cycle: fall back to the fold.
+    assert stop_order(["AB", "BA"], [1, 1]) == merge_sequences(["AB", "BA"])
 
 
 def test_format_time():
@@ -80,10 +93,11 @@ def test_branches_split_by_headsign_but_short_turns_stay():
     assert east.headsigns == ("East",)
     assert back.direction_id == 1
     assert back.headsigns == ("Alpha", "Charlie")
-    assert [row.stop_id for row in back.rows] == ["D", "C", "E", "B", "A"]
+    assert [row.stop_id for row in back.rows] == ["D", "E", "C", "B", "A"]
     by_trip = {c.trip_id: c for c in back.columns}
-    assert by_trip["back_short"].cells[2:] == (None, None, None)
-    assert by_trip["back_skip"].cells[1] is None
+    assert by_trip["back_short"].cells[1] is None
+    assert by_trip["back_short"].cells[3:] == (None, None)
+    assert by_trip["back_skip"].cells[2] is None
 
 
 def test_untimed_stops_are_served_but_blank():

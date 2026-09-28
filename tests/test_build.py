@@ -86,7 +86,7 @@ def test_site_with_brand_and_basemap():
     assert 'href="../../" aria-label="sites.gtfs.zone"' in page
     assert '<a href="4/"><title>' in home
     rows = re.findall(r'<th scope="row">.*?</th>', page, re.S)
-    assert rows and all('<span class="dot"' in row for row in rows)
+    assert rows and all('<span class="dot' in row for row in rows)
     assert all(
         'href="https://www.google.com/maps/search/?api=1&amp;query=' in row
         for row in rows
@@ -112,7 +112,7 @@ def test_same_headsign_runs_share_a_header_cell():
     assert '<th scope="col">Alpha</th><th scope="col" colspan="2">Charlie</th>' in row
 
 
-def test_arrival_and_departure_rows_on_dwells():
+def test_arrival_and_departure_share_a_cell_on_dwells():
     files = fixture_files("branching")
     files["stop_times.txt"] = (
         files["stop_times.txt"]
@@ -121,11 +121,22 @@ def test_arrival_and_departure_rows_on_dwells():
     )
     site = Site(slug="test", url="https://example.org/g.zip")
     page = build_site(make_zip(files), site, today=MONDAY)["4/index.html"].decode()
-    arrival = r'<tr class="ar"><th scope="row">.*?Bravo</a> <small>ar</small>'
-    assert re.search(arrival, page)
-    assert '<tr class="dp"><th scope="row"><small>dp</small></th>' in page
-    assert "<td>8:10</td>" in page and "<td>8:15</td>" in page
-    assert "ar: arrives, dp: departs." in page
+    assert 'class="ar"' not in page and 'class="dp"' not in page
+    assert '<td class="dw"><span>8:10</span>8:15</td>' in page
+    assert "Two times: arrives, then departs." in page
+
+
+def test_rail_branches_and_counts_minority_stops():
+    page = build("branching")["4/index.html"]
+    # Alpha-bound trips split at Delta: via Charlie or via Echo.
+    delta = re.search(r'<th scope="row">.*?Delta</a>', page)[0]
+    assert "C20,80 34,70 34,100" in delta
+    echo = re.search(r'<th scope="row">[^\n]*?Echo</a>[^\n]*?</th>', page)[0]
+    charlie = re.search(r'<th scope="row">[^\n]*?Charlie</a>[^\n]*?</th>', page)[0]
+    assert 'style="left:20px"' in echo and "<small>1 of 3 trips</small>" in echo
+    assert 'style="left:34px"' in charlie
+    # Straight single-lane rows are drawn by CSS, with no SVG.
+    assert '<span class="rail d" aria-hidden="true"><span class="dot solid"' in page
 
 
 def test_site_json():

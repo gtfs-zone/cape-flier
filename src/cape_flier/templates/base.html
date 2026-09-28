@@ -1,9 +1,14 @@
 {% macro badge(route, size="badge-lg") %}
 <span class="badge {{ size }} h-auto min-w-12 whitespace-normal border-0 font-bold{% if not route.colors %} badge-neutral{% endif %}"{% if route.colors %} style="background:#{{ route.colors[0] }};color:#{{ route.colors[1] }}"{% endif %}>{{ route.badge }}</span>
 {%- endmacro %}
-{% macro time_cell(head, cell, time) %}
-<td{% if time and time.pm %} class="pm"{% endif %}>
-{%- if time %}{{ time.text }}{% if time.next_day %}<sup>+1</sup>{% endif %}{% elif cell.untimed %}|{% endif %}
+{% macro clock_time(time) %}{{ time.text }}{% if time.next_day %}<sup>+1</sup>{% endif %}{% endmacro %}
+{% macro time_cell(head, cell) %}
+{%- set classes = [] %}
+{%- if cell.arrival %}{% set _ = classes.append("dw") %}{% endif %}
+{%- if cell.time and cell.time.pm %}{% set _ = classes.append("pm") %}{% endif %}
+<td{% if classes %} class="{{ classes | join(" ") }}"{% endif %}>
+{%- if cell.arrival %}<span{% if cell.arrival.pm %} class="pm"{% endif %}>{{ clock_time(cell.arrival) }}</span>{% endif %}
+{%- if cell.time %}{{ clock_time(cell.time) }}{% elif cell.untimed %}|{% endif %}
 {%- if cell.mark %}<sup>{{ cell.mark }}</sup>{% endif %}</td>
 {%- endmacro %}
 <!doctype html>

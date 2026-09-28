@@ -15,6 +15,17 @@ from cape_flier.gtfs.service import (
     missing_label,
     trip_note,
 )
+from cape_flier.strip import (
+    RailRow,
+    endpoint_threshold,
+    gutter_width,
+    is_endpoint,
+    is_minority,
+    lane_x,
+    route_graph,
+    row_paths,
+    stop_stats,
+)
 from cape_flier.timetable import Cell, Column, Timetable
 
 DAY_SECONDS = 24 * 3600
@@ -132,12 +143,11 @@ class RowView:
     zone: str
     cells: tuple[CellView, ...]
     google: str = ""
-
-    @property
-    def dwell(self) -> bool:
-        """Whether most trips timed here arrive over a minute before departing."""
-        timed = sum(1 for cell in self.cells if cell.time)
-        return 2 * sum(1 for cell in self.cells if cell.arrival) > timed
+    paths: tuple[str, ...] = ()
+    rail: str = ""
+    dot_x: int = 0
+    solid: bool = False
+    serves: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -152,6 +162,7 @@ class TableView:
     legend: tuple[str, ...]
     anchor: str = ""
     trips: int = 0
+    gutter: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -277,6 +288,23 @@ def stop_link(feed: Feed, stop_id: str) -> str:
     return google_link(stop.lat, stop.lon) if stop else ""
 
 
+def straight(row: RailRow) -> bool:
+    """Whether the row is only lane 0 running straight, drawn by CSS."""
+    return (
+        row.lane == 0
+        and not row.through
+        and row.merges in ((), (0,))
+        and row.branches in ((), (0,))
+    )
+
+
+def rail_class(row: RailRow) -> str:
+    """CSS halves of a straight row's rail: 'u' above the dot, 'd' below."""
+    if not straight(row):
+        return ""
+    return " ".join(half for half, on in (("u", row.merges), ("d", row.branches)) if on)
+
+
 def table_view(
     feed: Feed, table: Timetable, time_format: TimeFormat, anchor: str = ""
 ) -> TableView:
@@ -291,17 +319,35 @@ def table_view(
             table.columns, hour_shading(table.columns), notes, strict=True
         )
     )
+    shown = [i for i, row in enumerate(table.rows) if row.timepoint]
+    # Each column's served rows, indexed among the shown rows.
+    patterns = [
+        [k for k, i in enumerate(shown) if column.cells[i] is not None]
+        for column in table.columns
+    ]
+    graph = route_graph(list(dict.fromkeys(map(tuple, patterns))), len(shown))
+    stats = stop_stats(patterns, len(shown))
+    total = len(table.columns)
+    threshold = endpoint_threshold(total)
     rows = tuple(
         RowView(
-            name=tidy(row.name),
-            zone=zone_label(row.timezone, table.day_type.start),
+            name=tidy(table.rows[i].name),
+            zone=zone_label(table.rows[i].timezone, table.day_type.start),
             cells=tuple(
                 cell_view(column.cells[i], time_format) for column in table.columns
             ),
-            google=stop_link(feed, row.stop_id),
+            google=stop_link(feed, table.rows[i].stop_id),
+            paths=() if straight(graph.rows[k]) else tuple(row_paths(graph, k)),
+            rail=rail_class(graph.rows[k]),
+            dot_x=lane_x(graph.rows[k].lane),
+            solid=is_endpoint(stats[k], threshold),
+            serves=(
+                f"{stats[k].serves} of {total} trips"
+                if is_minority(stats[k], total)
+                else ""
+            ),
         )
-        for i, row in enumerate(table.rows)
-        if row.timepoint
+        for k, i in enumerate(shown)
     )
     cells = [cell for row in rows for cell in row.cells]
     legend = [f"{letter}: {note}." for note, letter in letters.items()]
@@ -315,8 +361,10 @@ def table_view(
         legend.append("d: drop off only.")
     if any(c.mark == "p" for c in cells):
         legend.append("p: pick up only.")
-    if any(row.dwell for row in rows):
-        legend.append("ar: arrives, dp: departs.")
+    if any(c.arrival for c in cells):
+        legend.append("Two times: arrives, then departs.")
+    if any(row.solid for row in rows[1:-1]):
+        legend.append("Filled dot: trips start or end here.")
     headsigns = [tidy(h) for h in table.headsigns]
     # Trip numbers repeated on every trip (often the route name) add nothing.
     return TableView(
@@ -330,6 +378,7 @@ def table_view(
         legend=tuple(legend),
         anchor=anchor,
         trips=len(table.columns),
+        gutter=gutter_width(graph.lane_count),
     )
 
 
