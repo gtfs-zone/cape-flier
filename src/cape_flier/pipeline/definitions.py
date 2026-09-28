@@ -1,4 +1,5 @@
-"""Dagster entrypoint: one partition per site in sites.yaml, rebuilt daily.
+"""Dagster entrypoint: one partition per site in sites.yaml, rebuilt daily and
+once more whenever a new cape-flier version is deployed.
 
 Each run builds one site and then rewrites the bucket root, so the root index
 is current after every run. The Gatus heartbeat is pushed only once every
@@ -7,21 +8,25 @@ configured site has been built today.
 
 import os
 from datetime import date
+from importlib.metadata import version
 from pathlib import Path
 
 import httpx
 from dagster import (
     AssetExecutionContext,
     DefaultScheduleStatus,
+    DefaultSensorStatus,
     Definitions,
     MaterializeResult,
     MetadataValue,
     RunRequest,
     ScheduleEvaluationContext,
+    SensorEvaluationContext,
     StaticPartitionsDefinition,
     asset,
     define_asset_job,
     schedule,
+    sensor,
 )
 
 from cape_flier.build import BASE_URL, build_site
@@ -39,6 +44,7 @@ CONFIG = load_config(
     Path(os.environ.get("CAPE_FLIER_CONFIG", "sites.yaml")).read_text()
 )
 SLUGS = [site.slug for site in CONFIG.sites]
+VERSION = version("cape-flier")
 
 site_partitions = StaticPartitionsDefinition(SLUGS)
 
@@ -50,8 +56,13 @@ def site_pages(context: AssetExecutionContext) -> MaterializeResult:
     today = date.today()
     bucket = Bucket(BucketSettings.from_env())
     previous = read_manifest(bucket, site.slug)
-    # Builds depend on the date, so only a second run on the same day may skip.
-    same_day = previous and previous.get("built") == today.isoformat()
+    # Builds depend on the date and the code, so only a second run on the same
+    # day with the same version may skip.
+    same_day = (
+        previous
+        and previous.get("built") == today.isoformat()
+        and previous.get("version") == VERSION
+    )
     with httpx.Client(
         headers={"User-Agent": USER_AGENT}, timeout=120.0, follow_redirects=True
     ) as http:
@@ -64,7 +75,7 @@ def site_pages(context: AssetExecutionContext) -> MaterializeResult:
         counts = {"files": len(previous["files"]), "uploaded": 0, "deleted": 0}
     else:
         files = build_site(body, site, today)
-        counts = publish_site(bucket, site.slug, files, source, today)
+        counts = publish_site(bucket, site.slug, files, source, today, VERSION)
     context.log.info("%s: %s", site.slug, counts)
 
     behind = publish_root(bucket, SLUGS, today)
@@ -100,4 +111,18 @@ def daily_sites(context: ScheduleEvaluationContext) -> list[RunRequest]:
     return [RunRequest(run_key=f"{slug}-{day}", partition_key=slug) for slug in SLUGS]
 
 
-defs = Definitions(assets=[site_pages], jobs=[sites_job], schedules=[daily_sites])
+# Rebuilds every site once per deployed version, and builds sites newly added
+# to sites.yaml; Dagster skips run keys this sensor has already requested.
+@sensor(job=sites_job, default_status=DefaultSensorStatus.RUNNING)
+def new_version(context: SensorEvaluationContext) -> list[RunRequest]:
+    return [
+        RunRequest(run_key=f"{slug}-v{VERSION}", partition_key=slug) for slug in SLUGS
+    ]
+
+
+defs = Definitions(
+    assets=[site_pages],
+    jobs=[sites_job],
+    schedules=[daily_sites],
+    sensors=[new_version],
+)

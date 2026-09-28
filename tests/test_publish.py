@@ -33,7 +33,7 @@ class FakeStore:
 def test_publish_uploads_only_changed_and_deletes_stale():
     store = FakeStore()
     files = {"index.html": b"home", "style.css": b"css", "old/index.html": b"x"}
-    assert publish_site(store, "s", files, {}, TODAY)["uploaded"] == 3
+    assert publish_site(store, "s", files, {}, TODAY, "1.0.0")["uploaded"] == 3
     assert store.puts == [
         "s/style.css",
         "s/index.html",
@@ -43,12 +43,13 @@ def test_publish_uploads_only_changed_and_deletes_stale():
 
     store.puts.clear()
     files = {"index.html": b"new home", "style.css": b"css"}
-    counts = publish_site(store, "s", files, {"url": "u"}, TODAY)
+    counts = publish_site(store, "s", files, {"url": "u"}, TODAY, "1.0.1")
     assert counts == {"files": 2, "uploaded": 1, "deleted": 1}
     assert store.puts == ["s/index.html", "s/manifest.json"]
     assert "s/old/index.html" not in store.objects
     manifest = json.loads(store.objects["s/manifest.json"])
     assert manifest["built"] == "2026-10-05"
+    assert manifest["version"] == "1.0.1"
     assert manifest["source"] == {"url": "u"}
 
 

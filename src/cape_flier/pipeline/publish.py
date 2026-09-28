@@ -1,8 +1,8 @@
 """Download a feed and publish built files to the bucket.
 
 Each site lives under `<slug>/` with a `manifest.json` written last, holding
-the build date, the feed's source headers and a hash per file, so a rebuild
-uploads only what changed.
+the build date, the cape-flier version, the feed's source headers and a hash
+per file, so a rebuild uploads only what changed.
 """
 
 import hashlib
@@ -55,7 +55,12 @@ def read_manifest(store: Store, slug: str) -> dict | None:
 
 
 def publish_site(
-    store: Store, slug: str, files: dict[str, bytes], source: dict, today: date
+    store: Store,
+    slug: str,
+    files: dict[str, bytes],
+    source: dict,
+    today: date,
+    version: str,
 ) -> dict[str, int]:
     """Upload changed files, delete ones no longer built, then the manifest."""
     old = (read_manifest(store, slug) or {}).get("files", {})
@@ -67,7 +72,12 @@ def publish_site(
     built = {f"{slug}/{path}" for path in files} | {f"{slug}/{MANIFEST}"}
     stale = store.list_keys(f"{slug}/") - built
     store.delete(stale)
-    manifest = {"built": today.isoformat(), "source": source, "files": hashes}
+    manifest = {
+        "built": today.isoformat(),
+        "version": version,
+        "source": source,
+        "files": hashes,
+    }
     store.put(f"{slug}/{MANIFEST}", json.dumps(manifest, indent=2).encode())
     return {"files": len(files), "uploaded": len(changed), "deleted": len(stale)}
 
