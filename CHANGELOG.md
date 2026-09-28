@@ -1,3 +1,15 @@
+## v0.8.0 (2026-09-29)
+
+### Feat
+
+- **footer**: credit the publisher, license and catalogs
+- **content**: publish a per-site content report and skip known-bad feeds
+- **colors**: hash a color for routes without route_color
+
+### Fix
+
+- **timetable**: draw the stop rail above table rows
+
 ## v0.7.0 (2026-09-29)
 
 ### Feat
