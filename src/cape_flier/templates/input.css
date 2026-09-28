@@ -12,12 +12,13 @@
 }
 
 /* Timetables */
-.timetable { border-collapse: separate; border-spacing: 0; font-variant-numeric: tabular-nums; }
+/* Isolated so the rail's z-index stays inside the table */
+.timetable { border-collapse: separate; border-spacing: 0; font-variant-numeric: tabular-nums; isolation: isolate; }
 .timetable th, .timetable td { padding: .4rem .6rem; border-bottom: 1px solid var(--color-base-300); }
 .timetable tbody tr:last-child > * { border-bottom: 0; }
 .timetable td { text-align: right; white-space: nowrap; }
 .timetable :is(th[scope=row], thead td:first-child, tfoot td:first-child) {
-  position: sticky; left: 0; z-index: 1;
+  position: sticky; left: 0;
   min-width: 8rem; max-width: 40vw;
   background: var(--color-base-100);
   border-right: 1px solid var(--color-base-300);
@@ -39,7 +40,8 @@
 
 /* Route-colored rail down the stop column: lanes per branch, a dot per stop, filled where trips start or end */
 .timetable th[scope=row] { padding-left: calc(var(--gutter, 40px) + .25rem); }
-.timetable .rail { position: absolute; left: 0; top: 0; bottom: -1px; width: var(--gutter, 40px); pointer-events: none; }
+/* Above every row's background and border, so the next row can't cut the line */
+.timetable .rail { position: absolute; left: 0; top: 0; bottom: -1px; z-index: 1; width: var(--gutter, 40px); pointer-events: none; }
 .timetable .rail svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; }
 /* The last row has no border below to cover, so its rail stays inside the table */
 .timetable tbody tr:last-child .rail { bottom: 0; }
@@ -49,7 +51,9 @@
 .timetable .rail:is(.u, .d)::before {
   content: ""; position: absolute; left: 20px; width: 7px; transform: translateX(-50%);
   background: var(--line, var(--color-base-content));
-  box-shadow: 0 0 0 1px color-mix(in oklab, var(--color-base-content) 15%, transparent);
+  --case: color-mix(in oklab, var(--color-base-content) 15%, transparent);
+  /* Casing on the sides only, so row joins show no seam */
+  box-shadow: -1px 0 0 var(--case), 1px 0 0 var(--case);
 }
 .timetable .rail.u::before { top: 0; bottom: 50%; }
 .timetable .rail.u.d::before { bottom: 0; }
