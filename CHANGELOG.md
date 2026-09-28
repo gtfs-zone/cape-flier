@@ -1,3 +1,9 @@
+## v0.7.0 (2026-09-29)
+
+### Feat
+
+- **catalog**: build sites from geometry-car feeds.json in shards
+
 ## v0.6.0 (2026-09-29)
 
 ### Feat
