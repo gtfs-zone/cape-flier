@@ -1,3 +1,9 @@
+## v0.10.1 (2026-09-29)
+
+### Fix
+
+- **root**: label feeds that built with no routes as having no routes
+
 ## v0.10.0 (2026-09-29)
 
 ### Feat

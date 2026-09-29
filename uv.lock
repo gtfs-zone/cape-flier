@@ -95,7 +95,7 @@ wheels = [
 
 [[package]]
 name = "cape-flier"
-version = "0.10.0"
+version = "0.10.1"
 source = { editable = "." }
 dependencies = [
     { name = "jinja2" },
