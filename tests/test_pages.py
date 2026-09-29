@@ -9,7 +9,6 @@ from cape_flier.pages import (
     ColumnHead,
     HeadsignSpan,
     badge_colors,
-    brand_colors,
     clock,
     clock_label,
     day_views,
@@ -128,12 +127,6 @@ def test_google_link():
         "https://www.google.com/maps/search/?api=1&query=42.00000,-73.50000"
     )
     assert google_link(None, None) == ""
-
-
-def test_brand_colors_pick_contrasting_text():
-    assert brand_colors("0e4c92") == ("0E4C92", "FFFFFF")
-    assert brand_colors("ffdd00") == ("FFDD00", "000000")
-    assert brand_colors(None) is None
 
 
 def test_rows_link_stops_to_google_maps():

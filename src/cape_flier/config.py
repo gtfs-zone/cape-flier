@@ -1,6 +1,6 @@
 """Pydantic models for sites.yaml: defaults plus per-site overrides."""
 
-from typing import Any, Literal, Self
+from typing import Annotated, Any, Literal, Self
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -51,7 +51,6 @@ class Options(Strict):
     horizon_days: int = Field(28, gt=0, le=366)
     time_format: TimeFormat = "12h"
     timepoints: Timepoints = "auto"
-    brand_color: str | None = Field(None, pattern=r"^[0-9A-Fa-f]{6}$")
     basemap: Basemap = "none"
 
 
@@ -170,6 +169,8 @@ class Config(Strict):
     defaults: Options = Options()
     catalog: CatalogFilter | None = None
     sites: tuple[SiteEntry, ...] = ()
+    # Feed ids `cape-flier dev` builds by default.
+    dev: tuple[Annotated[str, Field(pattern=FEED_PATTERN)], ...] = ()
 
     @model_validator(mode="before")
     @classmethod

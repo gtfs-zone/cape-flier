@@ -5,7 +5,7 @@ from datetime import date
 import pytest
 from conftest import fixture_files, fixture_zip, make_zip
 
-from cape_flier.build import build_root, build_site, page_digest
+from cape_flier.build import build_root, build_site, page_digest, site_status
 from cape_flier.catalog import shard_of
 from cape_flier.config import CatalogFeed, Site
 
@@ -66,12 +66,8 @@ def test_not_a_zip():
         build_site(b"not a zip", site)
 
 
-def test_site_with_brand_and_basemap():
-    files = build(
-        "branching",
-        basemap="stadia-toner",
-        brand_color="0E4C92",
-    )
+def test_site_with_basemap():
+    files = build("branching", basemap="stadia-toner")
     assert set(files) == {
         "index.html",
         "4/index.html",
@@ -82,7 +78,7 @@ def test_site_with_brand_and_basemap():
     }
     home = files["index.html"]
     assert '<link rel="stylesheet" href="style.css">' in home
-    assert "--color-primary: #0E4C92; --color-primary-content: #FFFFFF;" in home
+    assert "--color-primary" not in home
     page = files["4/index.html"]
     assert '<link rel="stylesheet" href="../style.css">' in page
     assert "<nav" not in page.split("<main", 1)[1]
@@ -97,6 +93,79 @@ def test_site_with_brand_and_basemap():
     assert all(
         'href="https://www.google.com/maps/search/?api=1&amp;query=' in row
         for row in rows
+    )
+
+
+def test_index_groups_routes_by_mode():
+    files = fixture_files("branching")
+    files["routes.txt"] += "S,Red,Red Line,1\n"
+    trips = files["trips.txt"].splitlines()[1:]
+    files["trips.txt"] += "".join(
+        line.replace("R,", "S,", 1)
+        .replace(",north", ",s-north")
+        .replace(",south", ",s-south")
+        + "\n"
+        for line in trips
+    )
+    times = files["stop_times.txt"].splitlines()[1:]
+    files["stop_times.txt"] += "".join(f"s-{line}\n" for line in times)
+    site = Site(slug="test", url="https://example.org/g.zip")
+    home = build_site(make_zip(files), site, today=MONDAY)["index.html"].decode()
+    assert 'href="#subway"' not in home
+    assert home.index('id="subway">Subway</h2>') < home.index('id="bus">Bus</h2>')
+    assert home.index('href="red/"') < home.index('href="4/"')
+    assert '<h2 class="card-title">Maps</h2>' in home
+    maps = home.split('<h2 class="card-title">Maps</h2>', 1)[1]
+    assert maps.index('<h3 class="font-semibold">Subway</h3>') < maps.index(
+        '<h3 class="font-semibold">Bus</h3>'
+    )
+    assert maps.count('<div class="map') == 2 and home.count("<script>") == 1
+
+
+def test_title_from_the_agency_with_most_routes():
+    files = fixture_files("branching")
+    files["agency.txt"] = (
+        "agency_id,agency_name,agency_url,agency_timezone\n"
+        "b,Small Partner,https://example.org/b,America/New_York\n"
+        "a,Test Transit,https://example.org,America/New_York\n"
+    )
+    files["routes.txt"] = "agency_id," + files["routes.txt"].replace("\nR,", "\na,R,")
+    site = Site(slug="test", url="https://example.org/g.zip")
+    home = build_site(make_zip(files), site, today=MONDAY)["index.html"].decode()
+    assert '<h1 class="text-3xl font-bold">Test Transit</h1>' in home
+    assert home.index(">Test Transit</span>") < home.index(">Small Partner</span>")
+
+
+def test_single_mode_index_has_no_mode_headings():
+    home = build("branching")["index.html"]
+    assert 'id="bus"' not in home
+
+
+@pytest.mark.parametrize(
+    ("summary", "outcome", "status"),
+    [
+        ({"routes": 2, "valid_through": "2026-12-01"}, "ok", "ok"),
+        ({"routes": 2, "valid_through": "2026-12-01"}, None, "ok"),
+        ({"routes": 2, "valid_through": "2026-10-10"}, "ok", "warn"),
+        ({"routes": 2, "valid_through": "2026-12-01"}, "http_error", "warn"),
+        ({"routes": 2, "valid_through": "2026-10-04"}, "ok", "bad"),
+        ({"routes": 2, "valid_through": None}, "ok", "bad"),
+        ({"routes": 0, "valid_through": "2026-12-01"}, "ok", "bad"),
+        ({}, None, "unknown"),
+    ],
+)
+def test_site_status(summary, outcome, status):
+    assert site_status(summary, outcome, MONDAY) == status
+
+
+def test_root_status_from_outcomes():
+    summaries = [
+        {"slug": "a", "title": "Alpha", "routes": 2, "valid_through": "2026-12-01"}
+    ]
+    files = build_root(summaries, MONDAY, outcomes={"a": "parse_error"})
+    country = files["countries/other/index.html"].decode()
+    assert 'rounded-full bg-warning" title="Expiring soon or last update failed"' in (
+        country
     )
 
 
@@ -152,7 +221,6 @@ def test_site_json():
         "slug": "test",
         "title": "Test & Co",
         "routes": 1,
-        "brand_color": None,
         "valid_through": summary["valid_through"],
         "generated": "2026-10-05",
         "country_code": None,
@@ -219,7 +287,6 @@ def test_build_root():
             "slug": "a",
             "title": "Alpha",
             "routes": 2,
-            "brand_color": "80276C",
             "valid_through": "2026-12-01",
             "subdivision": "Maine",
         }
@@ -263,7 +330,8 @@ def test_build_root():
     assert country.index(">Maine</h2>") < country.index(">Oregon</h2>")
     assert country.index('href="../../a/"') < country.index('href="../../b/"')
     assert "2 routes, to Dec 1" in country
-    assert country.count('style="background:#80276C"') == 1
+    assert 'rounded-full bg-success" title="Current"' in country
+    assert 'rounded-full bg-error" title="Expired or no service"' in country
     assert '<link rel="stylesheet" href="../../style.css">' in country
     assert (
         '<link rel="canonical" href="https://sites.gtfs.zone/countries/us/">' in country

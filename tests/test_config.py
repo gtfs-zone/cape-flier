@@ -17,8 +17,9 @@ REPO_CONFIG = Path(__file__).parent.parent / "sites.yaml"
 
 def test_repo_config_loads():
     config = load_config(REPO_CONFIG.read_text())
-    assert config.entry("columbia-county").basemap == "stadia-toner-dark"
-    assert config.entry("amtrak").brand_color == "00537E"
+    listed = {site.feed: site for site in config.sites}
+    assert listed["f-ff2cfa2434"].basemap == "stadia-toner-dark"
+    assert all(site.routes == RouteFilter() for site in config.sites)
 
 
 def test_site_overrides_defaults():
@@ -107,3 +108,8 @@ def test_route_filter():
     assert not rail.accepts("Red", 1)
     assert not rail.accepts("CR-Foxboro", 2)
     assert RouteFilter().accepts("anything", 3)
+
+
+def test_dev_feeds_must_be_feed_ids():
+    with pytest.raises(ValidationError):
+        load_config("dev: [mbta]")

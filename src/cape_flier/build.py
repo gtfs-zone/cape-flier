@@ -11,14 +11,14 @@ from importlib.metadata import version
 from cape_flier.catalog import shard_of
 from cape_flier.config import RouteFilter, Site
 from cape_flier.facts import feed_facts
-from cape_flier.gtfs.reader import Feed, Route, read_feed
+from cape_flier.gtfs.reader import Agency, Feed, Route, read_feed
 from cape_flier.gtfs.service import day_types, horizon_start
 from cape_flier.maps.svg import route_map, system_map
 from cape_flier.pages import (
-    brand_colors,
     breadcrumbs,
     day_views,
     feed_amenities,
+    mode_groups,
     modes_label,
     route_labels,
     route_slugs,
@@ -60,6 +60,14 @@ def route_order(route: Route) -> tuple[int, int, str, str]:
     )
 
 
+def agencies_by_routes(feed: Feed) -> list[Agency]:
+    """The feed's agencies, those running the most routes first."""
+    counts: dict[str, int] = {}
+    for route in feed.routes.values():
+        counts[route.agency_id] = counts.get(route.agency_id, 0) + 1
+    return sorted(feed.agencies.values(), key=lambda a: -counts.get(a.agency_id, 0))
+
+
 def site_timetables(
     feed: Feed, site: Site, today: date
 ) -> list[tuple[Route, list[Timetable]]]:
@@ -90,7 +98,7 @@ def build_site(
     timetables = site_timetables(feed, site, today)
     labels = route_labels(feed, [route for route, _ in timetables])
     slugs = route_slugs([route for route, _ in timetables], labels)
-    agencies = list(feed.agencies.values())
+    agencies = agencies_by_routes(feed)
     base_url = f"{BASE_URL}/{site.slug}/"
     feed_notes, marked = feed_amenities(
         [table for _, tables in timetables for table in tables]
@@ -99,7 +107,6 @@ def build_site(
         "site_title": site.title or (tidy(agencies[0].name) if agencies else site.slug),
         "base_url": base_url,
         "generated": today,
-        "brand": brand_colors(site.brand_color),
         "feed_notes": feed_notes,
         "source": data_source(feed, site),
     }
@@ -110,15 +117,25 @@ def build_site(
     ]
     through = valid_through(feed, today)
     maps = site.map == "svg"
-    system_routes = [
-        (view.title, view.badge, view.line_color, tables, f"{view.slug}/")
+    system_routes = {
+        view.slug: (view.title, view.badge, view.line_color, tables, f"{view.slug}/")
         for view, (_, tables) in zip(routes, timetables, strict=True)
+    }
+    groups = mode_groups(routes)
+    # One system map per mode, headed when there is more than one.
+    home_maps = [
+        (group.heading if len(groups) > 1 else "", svg)
+        for group in (groups if maps else [])
+        for svg in [
+            system_map(
+                feed,
+                f"{common['site_title']} {group.mode}",
+                [system_routes[view.slug] for view in group.routes],
+                site.basemap,
+            )
+        ]
+        if svg
     ]
-    home_map = (
-        system_map(feed, common["site_title"], system_routes, site.basemap)
-        if maps
-        else ""
-    )
     trail = [(ROOT_TITLE, f"{BASE_URL}/"), (common["site_title"], base_url)]
     files = {
         "index.html": render(
@@ -126,8 +143,9 @@ def build_site(
             **common,
             agencies=agencies,
             routes=routes,
+            groups=groups,
             modes=modes_label([view.mode for view in routes]),
-            map=home_map,
+            maps=home_maps,
             valid_through=through,
             feed_url=f"{LIST_URL}/#feed={site.feed}" if site.feed else "",
             jsonld=breadcrumbs(trail),
@@ -153,7 +171,6 @@ def build_site(
         slug=site.slug,
         title=common["site_title"],
         routes=len(routes),
-        brand_color=site.brand_color and site.brand_color.upper(),
         valid_through=through.isoformat() if through else None,
         generated=today.isoformat(),
         country_code=site.catalog and site.catalog.country_code,
@@ -172,7 +189,7 @@ def data_source(feed: Feed, site: Site) -> dict[str, object]:
     """Who published the feed, where it was downloaded, its license and catalog
     pages, for the footer."""
     info = feed.feed_info
-    agency = next(iter(feed.agencies.values()), None)
+    agency = next(iter(agencies_by_routes(feed)), None)
     publisher = (info and tidy(info.publisher_name)) or (agency and tidy(agency.name))
     publisher_url = (info and info.publisher_url) or (agency and agency.url)
     try:
@@ -209,6 +226,8 @@ def sitemap_urls(pages: dict[str, dict[str, str]]) -> list[tuple[str, str]]:
 
 
 OTHER = "other"
+# A site whose timetables end within this many days is marked as expiring.
+EXPIRING_DAYS = 14
 
 
 def country_key(summary: dict) -> str:
@@ -242,22 +261,38 @@ def country_groups(sites: list[dict]) -> list[dict]:
     return sorted(groups, key=lambda g: (g["key"] == OTHER, g["name"].casefold()))
 
 
+def site_status(summary: dict, outcome: str | None, today: date) -> str:
+    """ok, warn (expiring soon, or the last update failed and an older build is
+    served), bad (expired or no routes) or unknown, from a site.json summary and
+    the outcome of its last download and build."""
+    if "routes" not in summary:
+        return "unknown"
+    through = summary.get("valid_through")
+    if not summary["routes"] or not through or date.fromisoformat(through) < today:
+        return "bad"
+    expiring = (date.fromisoformat(through) - today).days < EXPIRING_DAYS
+    return "warn" if expiring or (outcome and outcome != "ok") else "ok"
+
+
 def build_root(
     summaries: list[dict],
     today: date,
     pages: dict[str, dict[str, str]] | None = None,
     indexnow_key: str | None = None,
+    outcomes: dict[str, str] | None = None,
 ) -> dict[str, bytes]:
     """The bucket root: an index of countries, a page per country listing its
     sites, a sitemap index over one sitemap per shard, robots.txt and the error
-    page. `summaries` are the sites' site.json contents and `pages` each site's
-    page paths with the date they last changed. No I/O."""
+    page. `summaries` are the sites' site.json contents, `pages` each site's
+    page paths with the date they last changed and `outcomes` each site's last
+    download and build outcome. No I/O."""
+    outcomes = outcomes or {}
     sites = sorted(
         (
             summary
             | {
-                "brand_color": summary.get("brand_color"),
                 "valid_through": through and date.fromisoformat(through),
+                "status": site_status(summary, outcomes.get(summary["slug"]), today),
             }
             for summary in summaries
             for through in [summary.get("valid_through")]
@@ -269,7 +304,6 @@ def build_root(
         "site_title": ROOT_TITLE,
         "base_url": f"{BASE_URL}/",
         "generated": today,
-        "brand": None,
         "version": version("cape-flier"),
     }
     website = {

@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from cape_flier.catalog import (
@@ -8,7 +10,9 @@ from cape_flier.catalog import (
     shard_of,
     slugify,
 )
-from cape_flier.config import CatalogFeed, load_config
+from cape_flier.config import CatalogFeed, RouteFilter, load_config
+
+REPO_CONFIG = Path(__file__).parent.parent / "sites.yaml"
 
 
 def feed(feed_id, name="Bus", **fields):
@@ -63,7 +67,7 @@ def test_resolve_sites_filters_and_overrides():
 defaults: {time_format: 24h}
 catalog: {countries: [US, CA], max_bytes: 5000, exclude: [f-000000000e]}
 sites:
-  - {feed: f-0000000001, title: Listed, brand_color: "112233"}
+  - {feed: f-0000000001, title: Listed, time_format: 12h}
   - {slug: manual, feed: f-0000000002}
   - {slug: direct, url: "https://y/z.zip"}
   - {feed: f-00000000ff}
@@ -94,7 +98,7 @@ sites:
     ]
     # Listed feeds skip the filter and keep their options.
     assert by_slug["one"].title == "Listed"
-    assert by_slug["one"].brand_color == "112233"
+    assert by_slug["one"].time_format == "12h"
     assert by_slug["one"].catalog.country_code == "FR"
     assert by_slug["manual"].catalog.name == "Two"
     assert by_slug["direct"].catalog is None
@@ -128,3 +132,24 @@ def test_shard_of_is_stable_and_spread():
     assert shard_of("amtrak") == shard_of("amtrak")
     shards = {shard_of(f"site-{n}") for n in range(500)}
     assert shards == set(range(SHARDS))
+
+
+def test_repo_config_takes_whole_feeds_from_the_catalog():
+    config = load_config(REPO_CONFIG.read_text())
+    doc = {
+        "feeds": [
+            feed("f-1f748c5476", "MBTA"),
+            feed("f-2f033a022e", "Amtrak"),
+            feed("f-ff2cfa2434", "Columbia County", country_code=None),
+        ]
+    }
+    sites, _ = resolve_sites(config, doc, {})
+    by_slug = {site.slug: site for site in sites}
+    assert set(by_slug) == {"mbta", "amtrak", "columbia-county"}
+    assert all(site.routes == RouteFilter() for site in sites)
+    assert by_slug["columbia-county"].title == "Columbia County Public Transportation"
+
+
+def test_repo_config_dev_feeds_are_valid():
+    config = load_config(REPO_CONFIG.read_text())
+    assert config.dev and len(set(config.dev)) == len(config.dev)

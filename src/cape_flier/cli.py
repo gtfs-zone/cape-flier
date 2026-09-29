@@ -133,6 +133,9 @@ def build(args: argparse.Namespace) -> None:
     if args.zip and not args.site:
         raise SystemExit("--zip needs --site")
     sites = load_sites(args.config, args.cache, not args.listed)
+    if args.dev:
+        dev_feeds = load_config(args.config.read_text()).dev
+        sites = [site for site in sites if site.feed in dev_feeds]
     if args.site:
         sites = [find_site(sites, args.site)]
     else:
@@ -168,19 +171,15 @@ def dump(args: argparse.Namespace) -> None:
             print()
 
 
-BUDGET_GZIP = 50_000
-
-
 def sizes(args: argparse.Namespace) -> None:
-    """Print the largest built pages by gzip size, flagging those over budget."""
+    """Print the largest built pages by gzip size."""
     rows = []
     for path in args.dir.rglob("*.html"):
         body = path.read_bytes()
         rows.append((len(gzip.compress(body)), len(body), path))
     rows.sort(reverse=True)
     for packed, raw, path in rows[: args.top]:
-        flag = "  OVER" if packed > BUDGET_GZIP else ""
-        print(f"{packed / 1000:6.1f} {raw / 1000:7.1f} KB  {path}{flag}")
+        print(f"{packed / 1000:6.1f} {raw / 1000:7.1f} KB  {path}")
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -243,7 +242,7 @@ def snapshot(paths: list[Path]) -> dict[Path, float]:
 
 
 def dev(args: argparse.Namespace) -> None:
-    """Build the sites listed in the config, or one site, into a cleared dir,
+    """Build the config's `dev:` feeds, or one site, into a cleared dir,
     serve it, and rebuild on changes to the package or config. Feeds are kept
     in `--cache` across runs; `--refresh` downloads them again."""
     watched = [PACKAGE, args.config]
@@ -260,7 +259,7 @@ def dev(args: argparse.Namespace) -> None:
             str(args.dir),
         ]
         command += ["--config", str(args.config), "--cache", cache]
-        command += ["--site", args.site] if args.site else ["--listed"]
+        command += ["--site", args.site] if args.site else ["--dev"]
 
         def rebuild(changed: set[Path]) -> None:
             if any(p.name.endswith(CSS_SOURCES) for p in changed):
@@ -308,6 +307,9 @@ def parser() -> argparse.ArgumentParser:
         "--listed", action="store_true", help="only the sites listed in the config"
     )
     build_cmd.add_argument(
+        "--dev", action="store_true", help="only the config's `dev:` feeds"
+    )
+    build_cmd.add_argument(
         "--workers", type=int, default=1, help="sites built in parallel"
     )
     build_cmd.set_defaults(func=build)
@@ -336,7 +338,7 @@ def parser() -> argparse.ArgumentParser:
     serve_cmd.set_defaults(func=serve)
 
     dev_cmd = commands.add_parser(
-        "dev", help="build the listed sites, serve, and rebuild on changes"
+        "dev", help="build the dev feeds, serve, and rebuild on changes"
     )
     dev_cmd.add_argument("--site", help="build only this site")
     dev_cmd.add_argument(

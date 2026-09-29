@@ -3,9 +3,12 @@
 {% block description %}{{ modes }} schedules for {{ site_title }}: timetables for {{ routes | length }} route{{ "s" if routes | length != 1 }}, with times at each stop.{% endblock %}
 {% block main %}
 <h1 class="text-3xl font-bold">{{ site_title }}</h1>
-{% if routes %}
+{% for group in groups %}
+{% if groups | length > 1 %}
+<h2 class="text-xl font-semibold" id="{{ group.anchor }}">{{ group.heading }}</h2>
+{% endif %}
 <ul class="list rounded-box bg-base-100 shadow-sm">
-{% for route in routes %}
+{% for route in group.routes %}
 <li><a class="flex min-h-14 flex-wrap items-center gap-x-4 gap-y-1 rounded-box px-4 py-3 hover:bg-base-200 focus-visible:bg-base-200" href="{{ route.slug }}/">
 {{ badge(route) }}
 {% if route.name %}<span class="min-w-0 flex-1 font-semibold">{{ route.name }}</span>{% endif %}
@@ -15,12 +18,16 @@
 </ul>
 {% else %}
 <p>No scheduled service in the next few weeks.</p>
-{% endif %}
-{% if map %}
+{% endfor %}
+{% if maps %}
 <section class="card bg-base-100 shadow-sm">
 <div class="card-body p-4">
-<h2 class="card-title">Map</h2>
-{% include "map.html" %}
+<h2 class="card-title">{{ "Maps" if maps | length > 1 else "Map" }}</h2>
+{% for heading, svg in maps %}
+{% if heading %}<h3 class="font-semibold">{{ heading }}</h3>{% endif %}
+{{ svg }}
+{% endfor %}
+{% include "map-script.html" %}
 </div>
 </section>
 {% endif %}

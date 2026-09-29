@@ -13,11 +13,11 @@ uv sync --all-extras                           # install dependencies, pipeline 
 ruff check .                                   # lint
 ruff format .                                  # format
 uv run pytest                                  # tests
-uv run cape-flier dev [--site <slug>] [--refresh]   # build listed sites + root, serve, rebuild on changes; feeds cached in .cache/feeds/
-uv run cape-flier build [--site <slug>] [--zip <path>] [--cache <dir>] [--out dist/] [--listed] [--country CC] [--limit N] [--workers N]
+uv run cape-flier dev [--site <slug>] [--refresh]   # build sites.yaml's dev: feeds + root, serve, rebuild on changes; feeds cached in .cache/feeds/
+uv run cape-flier build [--site <slug>] [--zip <path>] [--cache <dir>] [--out dist/] [--listed] [--dev] [--country CC] [--limit N] [--workers N]
 uv run cape-flier dump --site <slug> [--zip <path>] [--date YYYY-MM-DD] [--all-stops]
 uv run cape-flier serve                        # serve dist/ on the LAN
-uv run cape-flier sizes                        # largest built pages vs the 50 KB gzip budget
+uv run cape-flier sizes                        # largest built pages by gzip size
 uv run dagster dev -m cape_flier.pipeline.definitions   # pipeline UI (needs S3_* env)
 pnpm install && pnpm run build:css             # rebuild templates/style.css after template changes
 pre-commit install                             # install git hooks

@@ -8,6 +8,12 @@
 </a>
 {% endblock %}
 {% block main %}
+{% set statuses = {
+  "ok": ("bg-success", "Current"),
+  "warn": ("bg-warning", "Expiring soon or last update failed"),
+  "bad": ("bg-error", "Expired or no service"),
+  "unknown": ("bg-base-300", "Unknown"),
+} %}
 <h1 class="text-3xl font-bold">{{ country.name }}</h1>
 {% for subdivision, sites in country.subdivisions %}
 {% if country.subdivisions | length > 1 %}
@@ -16,7 +22,8 @@
 <ul class="list rounded-box bg-base-100 shadow-sm">
 {% for site in sites %}
 <li><a class="flex min-h-11 items-center gap-3 rounded-box px-4 py-2 hover:bg-base-200" href="{{ root }}{{ site.slug }}/">
-<span class="size-3 shrink-0 rounded-full bg-primary"{% if site.brand_color %} style="background:#{{ site.brand_color }}"{% endif %}></span>
+{% set status = statuses[site.status] %}
+<span class="size-3 shrink-0 rounded-full {{ status[0] }}" title="{{ status[1] }}"><span class="sr-only">{{ status[1] }}</span></span>
 <span class="flex-1">{{ site.title }}</span>
 <span class="text-sm opacity-70">{{ site.routes }} route{{ "s" if site.routes != 1 }}
 {%- if site.valid_through %}, to {{ site.valid_through.strftime("%b") }} {{ site.valid_through.day }}{% endif %}</span>

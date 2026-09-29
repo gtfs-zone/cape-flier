@@ -94,8 +94,10 @@ def site_pages(context: AssetExecutionContext) -> MaterializeResult:
 
         # After the root, which serves the IndexNow key file.
         live = {site.slug for site in sites}
-        behind = publish_root(bucket, read_entries(bucket), live, today, indexnow.KEY)
         contents = read_contents(bucket)
+        behind = publish_root(
+            bucket, read_entries(bucket), live, today, indexnow.KEY, contents
+        )
         indexnow.ping(
             http,
             [

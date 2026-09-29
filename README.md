@@ -10,11 +10,12 @@ needed to read a timetable.
 
 ```bash
 uv sync
-uv run cape-flier dev                                   # build the listed sites and the home page, serve, rebuild on changes
+uv run cape-flier dev                                   # build the dev: feeds in sites.yaml and the home page, serve, rebuild on changes
 uv run cape-flier dev --site columbia-county            # the same, one site only (faster rebuilds)
 uv run cape-flier dev --refresh                         # download the feeds again instead of using .cache/feeds/
 uv run cape-flier build                                 # clear dist/, build every site and the home page
 uv run cape-flier build --listed                        # only the sites listed in sites.yaml, not the catalog's
+uv run cape-flier build --dev                           # only the dev: feeds in sites.yaml
 uv run cape-flier build --country US --limit 50 --workers 4 --cache .cache/feeds   # a sample of catalog sites
 uv run cape-flier build --site columbia-county         # rebuild dist/columbia-county/ and the home page
 uv run cape-flier build --site columbia-county --zip feed.zip   # use a local zip
@@ -48,7 +49,6 @@ built whatever the catalog filter says:
 | `horizon_days` | days used to derive day types | `28` |
 | `time_format` | `12h`, `24h` | `12h` |
 | `timepoints` | `auto`, `all`, `timepoint-flag` | `auto` |
-| `brand_color` | `RRGGBB` for the header and links | none |
 | `basemap` | `none`, a Stadia style, or `{light: <style>, dark: <style>}` to follow the color scheme (tiles under the svg map) | `none` |
 
 Stadia styles: `stadia-alidade-smooth`, `stadia-alidade-smooth-dark`,

@@ -104,6 +104,20 @@ EXTENDED_MODES = (
     (1300, 1399, "gondola"),
     (1400, 1499, "funicular"),
 )
+# Order of the mode sections on a site's index.
+MODE_ORDER = (
+    "subway",
+    "light rail",
+    "monorail",
+    "train",
+    "trolleybus",
+    "bus",
+    "ferry",
+    "cable car",
+    "gondola",
+    "funicular",
+    "transit",
+)
 
 
 def mode_name(route_type: int) -> str:
@@ -139,13 +153,6 @@ def breadcrumbs(items: list[tuple[str, str]]) -> dict:
             for i, (name, url) in enumerate(items, 1)
         ],
     }
-
-
-def brand_colors(color: str | None) -> tuple[str, str] | None:
-    """(background, text) for a site's brand color."""
-    if color is None:
-        return None
-    return color.upper(), text_color(color)
 
 
 @dataclass(frozen=True, slots=True)
@@ -288,6 +295,32 @@ class RouteView:
     @property
     def days_label(self) -> str:
         return join_and(self.days)
+
+
+@dataclass(frozen=True, slots=True)
+class ModeGroup:
+    """One mode's routes on a site's index."""
+
+    mode: str
+    routes: tuple[RouteView, ...]
+
+    @property
+    def heading(self) -> str:
+        return self.mode[:1].upper() + self.mode[1:]
+
+    @property
+    def anchor(self) -> str:
+        return slugify(self.mode)
+
+
+def mode_groups(routes: Sequence[RouteView]) -> list[ModeGroup]:
+    """Routes by mode in MODE_ORDER, each keeping its order within the mode."""
+    by_mode: dict[str, list[RouteView]] = {}
+    for route in routes:
+        by_mode.setdefault(route.mode, []).append(route)
+    return [
+        ModeGroup(mode, tuple(by_mode[mode])) for mode in MODE_ORDER if mode in by_mode
+    ]
 
 
 def cell_view(cell: Cell | None, time_format: TimeFormat) -> CellView:

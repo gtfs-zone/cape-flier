@@ -31,15 +31,11 @@
 {% endif %}
 {% block head %}{% endblock %}
 <meta name="color-scheme" content="light dark">
-{% if brand %}<meta name="theme-color" content="#{{ brand[0] }}">{% endif %}
 <link rel="icon" type="image/svg+xml" href="{{ root }}logo.svg">
 <link rel="stylesheet" href="{{ root }}style.css">
-{% if brand %}
-<style>:root { --color-primary: #{{ brand[0] }}; --color-primary-content: #{{ brand[1] }}; }</style>
-{% endif %}
 </head>
 <body class="min-h-screen bg-base-200 text-base-content">
-<header class="navbar {{ 'bg-primary text-primary-content' if brand else 'bg-base-100' }} shadow-sm">
+<header class="navbar bg-base-100 shadow-sm">
 <div class="mx-auto flex w-full max-w-4xl items-center gap-2 px-2">
 {% block brand %}
 <a class="btn btn-ghost h-auto min-h-11 flex-1 justify-start py-2 text-left text-lg" href="{{ root or './' }}">{{ site_title }}</a>

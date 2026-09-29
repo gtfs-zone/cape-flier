@@ -401,16 +401,19 @@ def publish_root(
     live: set[str],
     today: date,
     indexnow_key: str | None = None,
+    contents: dict[str, dict] | None = None,
 ) -> list[str]:
-    """Rewrite the root pages from the shard entries of the `live` sites and
-    delete everything else, unless `live` shrank below PRUNE_RATIO of the
-    sites listed so far. Returns the live slugs not built today."""
+    """Rewrite the root pages from the shard entries of the `live` sites, with
+    each site's status from its content report entry, and delete everything
+    else, unless `live` shrank below PRUNE_RATIO of the sites listed so far.
+    Returns the live slugs not built today."""
     listed = {slug: entry for slug, entry in entries.items() if slug in live}
     files = build_root(
         [entry["summary"] for entry in listed.values()],
         today,
         {slug: entry["pages"] for slug, entry in listed.items()},
         indexnow_key,
+        {slug: c["outcome"] for slug, c in (contents or {}).items() if "outcome" in c},
     )
     for path, body in files.items():
         store.put(path, body)
