@@ -145,9 +145,9 @@ def test_repo_config_takes_whole_feeds_from_the_catalog():
     }
     sites, _ = resolve_sites(config, doc, {})
     by_slug = {site.slug: site for site in sites}
-    assert set(by_slug) == {"mbta", "amtrak", "columbia-county"}
+    # No country code, so the catalog filter skips it.
+    assert set(by_slug) == {"mbta", "amtrak"}
     assert all(site.routes == RouteFilter() for site in sites)
-    assert by_slug["columbia-county"].title == "Columbia County Public Transportation"
 
 
 def test_repo_config_dev_feeds_are_valid():

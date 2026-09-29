@@ -164,8 +164,8 @@ def dump(args: argparse.Namespace) -> None:
     site = find_site(load_sites(args.config, None), args.site)
     feed = site_feed(feed_zip(site, args.zip), site)
     today = args.date or date.today()
-    for route, tables in site_timetables(feed, site, today):
-        print(f"# {route.name}")
+    for route, tables, state, state_date in site_timetables(feed, site, today):
+        print(f"# {route.name}" + (f" ({state} {state_date})" if state else ""))
         for table in tables:
             print(to_text(table, site.time_format, all_rows=args.all_stops))
             print()

@@ -18,14 +18,11 @@ dev:
   - f-1f748c5476           # MBTA: subway, light rail, train, bus, ferry
   - f-2f033a022e           # Amtrak: long-distance train and bus
   - f-da2e3cdeed           # Big Blue Bus: bus only
-  - f-ff2cfa2434           # Columbia County: small, no country code
+  - f-f253731f03           # Columbia County: small, end date years out
   - f-c485850b86           # Halifax Transit: bus and ferry, Canada
   - f-eaa9f8e31c           # BC Ferries: ferry only, Canada
 
 # Each site takes either `feed:` (a feed id from feeds.json, listed whatever the
 # catalog filter says) or `url:` (a direct GTFS zip URL, with a `slug:`), plus
 # any option from `defaults` to override it. A feed's slug is optional.
-sites:
-  # No country code in feeds.json, so the catalog filter would skip it.
-  - feed: f-ff2cfa2434
-    title: Columbia County Public Transportation
+sites: []

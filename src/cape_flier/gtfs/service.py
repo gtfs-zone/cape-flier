@@ -96,26 +96,35 @@ def start_day_offset(feed: Feed, trip_id: str, day: date) -> int:
     return min(0, local // DAY_SECONDS)
 
 
-def first_service_date(feed: Feed) -> date | None:
-    starts = [calendar.start for calendar in feed.calendars.values()]
-    starts += [
-        day
-        for exceptions in feed.calendar_dates.values()
-        for day, added in exceptions.items()
-        if added
+def service_bounds(
+    feed: Feed, service_ids: Iterable[str] | None = None
+) -> tuple[list[date], list[date]]:
+    """(calendar starts, calendar ends), each plus the added dates, of the
+    given services or of all of them."""
+    wanted = None if service_ids is None else set(service_ids)
+    calendars = [
+        c for sid, c in feed.calendars.items() if wanted is None or sid in wanted
     ]
-    return min(starts, default=None)
+    added = [
+        day
+        for sid, exceptions in feed.calendar_dates.items()
+        if wanted is None or sid in wanted
+        for day, on in exceptions.items()
+        if on
+    ]
+    return [c.start for c in calendars] + added, [c.end for c in calendars] + added
 
 
-def last_service_date(feed: Feed) -> date | None:
-    ends = [calendar.end for calendar in feed.calendars.values()]
-    ends += [
-        day
-        for exceptions in feed.calendar_dates.values()
-        for day, added in exceptions.items()
-        if added
-    ]
-    return max(ends, default=None)
+def first_service_date(
+    feed: Feed, service_ids: Iterable[str] | None = None
+) -> date | None:
+    return min(service_bounds(feed, service_ids)[0], default=None)
+
+
+def last_service_date(
+    feed: Feed, service_ids: Iterable[str] | None = None
+) -> date | None:
+    return max(service_bounds(feed, service_ids)[1], default=None)
 
 
 def horizon_start(feed: Feed, today: date) -> date:

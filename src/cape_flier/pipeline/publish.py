@@ -27,7 +27,14 @@ from collections.abc import Callable
 from datetime import date
 from typing import TYPE_CHECKING, Protocol
 
-from cape_flier.build import build_root, build_site, page_digest
+from cape_flier.build import (
+    UNUSABLE,
+    EmptyFeed,
+    build_root,
+    build_site,
+    page_digest,
+    unbuilt_summary,
+)
 from cape_flier.config import Site
 from cape_flier.facts import sniff
 from cape_flier.gtfs.reader import MissingFiles
@@ -46,7 +53,7 @@ CONTENT_INDEX = f"{CONTENT_PREFIX}index.json"
 # Keys at the root that are state, not pages, and never pruned.
 STATE = (SLUGS, SHARD_PREFIX, CONTENT_PREFIX)
 # Outcomes that are the feed's fault; such a feed is skipped until it changes.
-BAD = frozenset({"not_zip", "missing_files", "parse_error"})
+BAD = UNUSABLE
 RETRY_DAYS = 7
 DETAIL_LENGTH = 200
 # httpx transport failures, by exception name.
@@ -233,6 +240,8 @@ def checked_build(body: bytes, site: Site, today: date) -> dict[str, bytes]:
         raise FeedProblem("not_zip", str(exc)) from None
     except MissingFiles as exc:
         raise FeedProblem("missing_files", str(exc)) from None
+    except EmptyFeed as exc:
+        raise FeedProblem("empty", str(exc)) from None
     except (ValueError, KeyError, IndexError, UnicodeDecodeError) as exc:
         raise FeedProblem("parse_error", f"{type(exc).__name__}: {exc}") from None
 
@@ -402,18 +411,29 @@ def publish_root(
     today: date,
     indexnow_key: str | None = None,
     contents: dict[str, dict] | None = None,
+    sites: list[Site] | None = None,
 ) -> list[str]:
-    """Rewrite the root pages from the shard entries of the `live` sites, with
-    each site's status from its content report entry, and delete everything
-    else, unless `live` shrank below PRUNE_RATIO of the sites listed so far.
-    Returns the live slugs not built today."""
+    """Rewrite the root pages from the shard entries of the `live` sites, plus
+    a row for each of `sites` that is live but has no entry, with each site's
+    status from its content report entry, and delete everything else, unless
+    `live` shrank below PRUNE_RATIO of the sites listed so far. Returns the
+    live slugs not built today."""
     listed = {slug: entry for slug, entry in entries.items() if slug in live}
+    unbuilt = [
+        unbuilt_summary(site)
+        for site in sites or []
+        if site.slug in live and site.slug not in listed
+    ]
     files = build_root(
-        [entry["summary"] for entry in listed.values()],
+        [entry["summary"] for entry in listed.values()] + unbuilt,
         today,
         {slug: entry["pages"] for slug, entry in listed.items()},
         indexnow_key,
-        {slug: c["outcome"] for slug, c in (contents or {}).items() if "outcome" in c},
+        {
+            slug: {"outcome": c["outcome"], "detail": c.get("detail", "")}
+            for slug, c in (contents or {}).items()
+            if c and "outcome" in c
+        },
     )
     for path, body in files.items():
         store.put(path, body)

@@ -15,6 +15,11 @@
 {% endif %}
 <div class="space-y-2">
 <h1 class="flex flex-wrap items-center gap-3 text-2xl font-bold sm:text-3xl">{{ badge(route) }}{% if route.name %}<span class="min-w-0">{{ route.name }}</span>{% endif %}</h1>
+{% if route.state == "expired" %}
+<div role="alert" class="alert alert-error alert-soft">This route's service ended on {{ route.state_date | long_date }}. The timetable shown is its last schedule.</div>
+{% elif route.state == "upcoming" %}
+<div role="alert" class="alert alert-info alert-soft">This route's service starts on {{ route.state_date | long_date }}. The timetable shown is its first schedule.</div>
+{% endif %}
 {% if route.endpoints or route.days %}
 <p class="text-base-content/80">The {{ route.title }} {{ route.mode }} route
 {%- if route.endpoints %} runs between {{ route.endpoints[0] }} and {{ route.endpoints[1] }}{% endif %}

@@ -4,10 +4,12 @@ from functools import cache
 
 from jinja2 import Environment, PackageLoader, StrictUndefined
 
+from cape_flier.pages import long_date
+
 
 @cache
 def environment() -> Environment:
-    return Environment(
+    env = Environment(
         loader=PackageLoader("cape_flier", "templates"),
         autoescape=True,
         undefined=StrictUndefined,
@@ -15,6 +17,8 @@ def environment() -> Environment:
         lstrip_blocks=True,
         keep_trailing_newline=True,
     )
+    env.filters["long_date"] = long_date
+    return env
 
 
 def asset(name: str) -> bytes:

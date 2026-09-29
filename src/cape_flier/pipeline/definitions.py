@@ -96,7 +96,13 @@ def site_pages(context: AssetExecutionContext) -> MaterializeResult:
         live = {site.slug for site in sites}
         contents = read_contents(bucket)
         behind = publish_root(
-            bucket, read_entries(bucket), live, today, indexnow.KEY, contents
+            bucket,
+            read_entries(bucket),
+            live,
+            today,
+            indexnow.KEY,
+            contents,
+            sites,
         )
         indexnow.ping(
             http,

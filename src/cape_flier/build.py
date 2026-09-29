@@ -5,26 +5,35 @@ import io
 import json
 import re
 import zipfile
-from datetime import date
+from datetime import date, timedelta
 from importlib.metadata import version
+from typing import NamedTuple
+from urllib.parse import urlsplit
 
 from cape_flier.catalog import shard_of
 from cape_flier.config import RouteFilter, Site
 from cape_flier.facts import feed_facts
 from cape_flier.gtfs.reader import Agency, Feed, Route, read_feed
-from cape_flier.gtfs.service import day_types, horizon_start
+from cape_flier.gtfs.service import (
+    day_types,
+    first_service_date,
+    horizon_start,
+    last_service_date,
+)
 from cape_flier.maps.svg import route_map, system_map
 from cape_flier.pages import (
     breadcrumbs,
+    date_range,
     day_views,
     feed_amenities,
+    join_and,
     mode_groups,
     modes_label,
     route_labels,
     route_slugs,
     route_view,
+    service_range,
     tidy,
-    valid_through,
 )
 from cape_flier.render import asset, render
 from cape_flier.timetable import Timetable, route_timetables
@@ -34,6 +43,8 @@ LIST_URL = "https://list.gtfs.zone"
 ROOT_TITLE = "sites.gtfs.zone"
 # The footer's build date, as base.html marks it up.
 GENERATED = re.compile(rb'<time class="generated"[^>]*>.*?</time>')
+# Agencies named in a site's title before "and N others".
+TITLE_AGENCIES = 3
 
 
 def page_digest(body: bytes) -> str:
@@ -68,21 +79,82 @@ def agencies_by_routes(feed: Feed) -> list[Agency]:
     return sorted(feed.agencies.values(), key=lambda a: -counts.get(a.agency_id, 0))
 
 
-def site_timetables(
-    feed: Feed, site: Site, today: date
-) -> list[tuple[Route, list[Timetable]]]:
-    """Every route's timetables over the site's horizon from `today`."""
+class RouteTables(NamedTuple):
+    route: Route
+    tables: list[Timetable]
+    # "expired" or "upcoming" when the tables are from outside the horizon.
+    state: str = ""
+    state_date: date | None = None
+
+
+def site_timetables(feed: Feed, site: Site, today: date) -> list[RouteTables]:
+    """Every route's timetables over the site's horizon from `today`. A route
+    with no service in the horizon gets its last `horizon_days` of service
+    when that ended, or its first when that starts later."""
     start = horizon_start(feed, today)
+    days = site.horizon_days
+    trips_by_route: dict[str, list[str]] = {}
+    for trip in feed.trips.values():
+        trips_by_route.setdefault(trip.route_id, []).append(trip.trip_id)
     result = []
     for route in sorted(feed.routes.values(), key=route_order):
-        trip_ids = [
-            t.trip_id for t in feed.trips.values() if t.route_id == route.route_id
-        ]
-        types = day_types(feed, trip_ids, start, site.horizon_days)
+        trip_ids = trips_by_route.get(route.route_id, [])
+        types = day_types(feed, trip_ids, start, days)
         tables = route_timetables(feed, route.route_id, types, site.timepoints)
         if tables:
-            result.append((route, tables))
+            result.append(RouteTables(route, tables))
+            continue
+        services = {feed.trips[t].service_id for t in trip_ids}
+        first = first_service_date(feed, services)
+        last = last_service_date(feed, services)
+        if first is None or last is None:
+            continue
+        if last < start:
+            state, state_date = "expired", last
+            window = max(first, last - timedelta(days=days - 1))
+        elif first > start:
+            state, state_date, window = "upcoming", first, first
+        else:
+            continue
+        types = day_types(feed, trip_ids, window, days)
+        tables = route_timetables(feed, route.route_id, types, site.timepoints)
+        if tables:
+            result.append(RouteTables(route, tables, state, state_date))
     return result
+
+
+class EmptyFeed(ValueError):
+    """A zip with no route that has scheduled trips."""
+
+
+def site_title(feed: Feed, site: Site) -> str:
+    """The configured title, else the named agencies with the most routes
+    first, else the catalog's feed name, else the slug."""
+    if site.title:
+        return site.title
+    running = {route.agency_id for route in feed.routes.values()}
+    agencies = agencies_by_routes(feed)
+    # Only agencies running a route, unless no route names a listed agency.
+    agencies = [a for a in agencies if a.agency_id in running] or agencies
+    names = [name for a in agencies if (name := tidy(a.name))]
+    if len(names) > TITLE_AGENCIES:
+        rest = len(names) - TITLE_AGENCIES
+        names = [*names[:TITLE_AGENCIES], f"{rest} other{'s' if rest != 1 else ''}"]
+    if names:
+        return join_and(names)
+    return (site.catalog and tidy(site.catalog.name)) or site.slug
+
+
+def source_label(url: str) -> str:
+    """'host: file' for a download URL, e.g. 'github.com: gtfs.zip'."""
+    parts = urlsplit(url)
+    host = parts.hostname or ""
+    name = parts.path.rstrip("/").rsplit("/", 1)[-1]
+    if parts.query:
+        name = f"{name}?{parts.query}"
+    if not host:
+        return name
+    return f"{host}: {name}" if name else host
 
 
 def build_site(
@@ -96,15 +168,17 @@ def build_site(
     today = today or date.today()
     feed = site_feed(zip_bytes, site)
     timetables = site_timetables(feed, site, today)
-    labels = route_labels(feed, [route for route, _ in timetables])
-    slugs = route_slugs([route for route, _ in timetables], labels)
+    if not timetables:
+        raise EmptyFeed("no route has scheduled trips")
+    labels = route_labels(feed, [rt.route for rt in timetables])
+    slugs = route_slugs([rt.route for rt in timetables], labels)
     agencies = agencies_by_routes(feed)
     base_url = f"{BASE_URL}/{site.slug}/"
     feed_notes, marked = feed_amenities(
-        [table for _, tables in timetables for table in tables]
+        [table for rt in timetables for table in rt.tables]
     )
     common = {
-        "site_title": site.title or (tidy(agencies[0].name) if agencies else site.slug),
+        "site_title": site_title(feed, site),
         "base_url": base_url,
         "generated": today,
         "feed_notes": feed_notes,
@@ -112,16 +186,24 @@ def build_site(
     }
 
     routes = [
-        route_view(route, slugs[route.route_id], tables, labels.get(route.route_id, ""))
-        for route, tables in timetables
+        route_view(
+            rt.route,
+            slugs[rt.route.route_id],
+            rt.tables,
+            labels.get(rt.route.route_id, ""),
+            rt.state,
+            rt.state_date,
+        )
+        for rt in timetables
     ]
-    through = valid_through(feed, today)
+    start, end = service_range(feed)
     maps = site.map == "svg"
     system_routes = {
-        view.slug: (view.title, view.badge, view.line_color, tables, f"{view.slug}/")
-        for view, (_, tables) in zip(routes, timetables, strict=True)
+        view.slug: (view.title, view.badge, view.line_color, rt.tables, f"{view.slug}/")
+        for view, rt in zip(routes, timetables, strict=True)
     }
-    groups = mode_groups(routes)
+    groups = mode_groups([view for view in routes if view.state != "expired"])
+    expired = [view for view in routes if view.state == "expired"]
     # One system map per mode, headed when there is more than one.
     home_maps = [
         (group.heading if len(groups) > 1 else "", svg)
@@ -144,17 +226,18 @@ def build_site(
             agencies=agencies,
             routes=routes,
             groups=groups,
+            expired=expired,
             modes=modes_label([view.mode for view in routes]),
             maps=home_maps,
-            valid_through=through,
+            valid=("from " if start and end else "") + date_range(start, end),
             feed_url=f"{LIST_URL}/#feed={site.feed}" if site.feed else "",
             jsonld=breadcrumbs(trail),
             root="",
         )
     }
-    for view, (_, tables) in zip(routes, timetables, strict=True):
+    for view, rt in zip(routes, timetables, strict=True):
         route_svg = (
-            route_map(feed, view.title, view.line_color, tables, site.basemap)
+            route_map(feed, view.title, view.line_color, rt.tables, site.basemap)
             if maps
             else ""
         )
@@ -163,15 +246,19 @@ def build_site(
             **common,
             route=view,
             map=route_svg,
-            days=day_views(feed, tables, site.time_format, marked),
+            days=day_views(feed, rt.tables, site.time_format, marked),
             jsonld=breadcrumbs([*trail, (view.title, f"{base_url}{view.slug}/")]),
             root="../",
         )
+    download_url = common["source"]["download_url"]
     files["site.json"] = summary_json(
         slug=site.slug,
         title=common["site_title"],
+        source=source_label(download_url) if download_url else "",
         routes=len(routes),
-        valid_through=through.isoformat() if through else None,
+        expired_routes=len(expired),
+        valid_from=start.isoformat() if start else None,
+        valid_through=end.isoformat() if end else None,
         generated=today.isoformat(),
         country_code=site.catalog and site.catalog.country_code,
         country=site.catalog and site.catalog.country,
@@ -208,6 +295,23 @@ def data_source(feed: Feed, site: Site) -> dict[str, object]:
 def summary_json(**fields: object) -> bytes:
     """A site's summary for the root index, as site.json."""
     return json.dumps(fields, indent=2).encode() + b"\n"
+
+
+def unbuilt_summary(site: Site) -> dict:
+    """The summary of a site with no build, from its config and catalog entry."""
+    catalog = site.catalog
+    try:
+        source = source_label(site.download_url())
+    except LookupError:
+        source = ""
+    return {
+        "slug": site.slug,
+        "title": site.title or (catalog and tidy(catalog.name)) or site.slug,
+        "source": source,
+        "country_code": catalog and catalog.country_code,
+        "country": catalog and catalog.country,
+        "subdivision": catalog and catalog.subdivision,
+    }
 
 
 def sitemap_urls(pages: dict[str, dict[str, str]]) -> list[tuple[str, str]]:
@@ -261,17 +365,66 @@ def country_groups(sites: list[dict]) -> list[dict]:
     return sorted(groups, key=lambda g: (g["key"] == OTHER, g["name"].casefold()))
 
 
+# Outcomes that are the feed's own fault, not a passing download problem.
+UNUSABLE = frozenset({"not_zip", "missing_files", "parse_error", "empty"})
+# Why a site is unavailable, by the outcome of its last download and build.
+REASONS = {
+    "not_zip": "Download is not a zip",
+    "missing_files": "Missing required files",
+    "parse_error": "Feed could not be read",
+    "empty": "Feed has no scheduled trips",
+    "timeout": "Download timed out",
+    "memory": "Too large to build",
+}
+# Order of statuses on a country page.
+STATUS_ORDER = {"ok": 0, "expiring": 0, "stale": 0, "expired": 1, "unavailable": 2}
+
+
 def site_status(summary: dict, outcome: str | None, today: date) -> str:
-    """ok, warn (expiring soon, or the last update failed and an older build is
-    served), bad (expired or no routes) or unknown, from a site.json summary and
-    the outcome of its last download and build."""
-    if "routes" not in summary:
-        return "unknown"
+    """From a site.json summary and the outcome of its last download and
+    build: unavailable (never built, or the feed itself is unusable), expired
+    (its service has ended), stale (the last update failed and an older build
+    is served), expiring (service ends within EXPIRING_DAYS) or ok."""
     through = summary.get("valid_through")
-    if not summary["routes"] or not through or date.fromisoformat(through) < today:
-        return "bad"
-    expiring = (date.fromisoformat(through) - today).days < EXPIRING_DAYS
-    return "warn" if expiring or (outcome and outcome != "ok") else "ok"
+    if outcome in UNUSABLE or not summary.get("routes") or not through:
+        return "unavailable"
+    days_left = (date.fromisoformat(through) - today).days
+    if days_left < 0:
+        return "expired"
+    if outcome and outcome != "ok":
+        return "stale"
+    return "expiring" if days_left < EXPIRING_DAYS else "ok"
+
+
+def unavailable_reason(outcome: str | None, detail: str) -> str:
+    """Why a site is unavailable, for its row on a country page."""
+    if outcome is None:
+        return "Not built yet"
+    if outcome == "http_error":
+        return f"Download failed: {detail}" if detail else "Download failed"
+    return REASONS.get(outcome, "Build failed")
+
+
+def site_row(summary: dict, outcome: dict, today: date) -> dict:
+    """A site.json summary plus what its country page row shows."""
+    status = site_status(summary, outcome.get("outcome"), today)
+    start, end = summary.get("valid_from"), summary.get("valid_through")
+    # Defaults for summaries written before these fields existed.
+    return (
+        {"source": "", "routes": 0, "expired_routes": 0}
+        | summary
+        | {
+            "status": status,
+            "dates": date_range(
+                start and date.fromisoformat(start), end and date.fromisoformat(end)
+            ),
+            "reason": unavailable_reason(
+                outcome.get("outcome"), outcome.get("detail", "")
+            )
+            if status == "unavailable"
+            else "",
+        }
+    )
 
 
 def build_root(
@@ -279,25 +432,18 @@ def build_root(
     today: date,
     pages: dict[str, dict[str, str]] | None = None,
     indexnow_key: str | None = None,
-    outcomes: dict[str, str] | None = None,
+    outcomes: dict[str, dict] | None = None,
 ) -> dict[str, bytes]:
     """The bucket root: an index of countries, a page per country listing its
     sites, a sitemap index over one sitemap per shard, robots.txt and the error
-    page. `summaries` are the sites' site.json contents, `pages` each site's
-    page paths with the date they last changed and `outcomes` each site's last
-    download and build outcome. No I/O."""
+    page. `summaries` are the sites' site.json contents (a site never built has
+    only its slug, title, source and place), `pages` each site's page paths
+    with the date they last changed and `outcomes` each site's last download
+    and build outcome and detail. No I/O."""
     outcomes = outcomes or {}
     sites = sorted(
-        (
-            summary
-            | {
-                "valid_through": through and date.fromisoformat(through),
-                "status": site_status(summary, outcomes.get(summary["slug"]), today),
-            }
-            for summary in summaries
-            for through in [summary.get("valid_through")]
-        ),
-        key=lambda summary: summary["title"].casefold(),
+        (site_row(s, outcomes.get(s["slug"], {}), today) for s in summaries),
+        key=lambda row: (STATUS_ORDER[row["status"]], row["title"].casefold()),
     )
     countries = country_groups(sites)
     common = {

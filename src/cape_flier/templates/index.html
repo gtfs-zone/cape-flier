@@ -12,13 +12,24 @@
 <li><a class="flex min-h-14 flex-wrap items-center gap-x-4 gap-y-1 rounded-box px-4 py-3 hover:bg-base-200 focus-visible:bg-base-200" href="{{ route.slug }}/">
 {{ badge(route) }}
 {% if route.name %}<span class="min-w-0 flex-1 font-semibold">{{ route.name }}</span>{% endif %}
-{% if route.days %}<span class="basis-full text-sm text-base-content/70">{{ route.days | join(", ") }}</span>{% endif %}
+{% if route.days or route.state_label %}<span class="basis-full text-sm text-base-content/70">{{ route.days | join(", ") }}{% if route.days and route.state_label %}, {% endif %}{{ route.state_label }}</span>{% endif %}
 </a></li>
 {% endfor %}
 </ul>
-{% else %}
-<p>No scheduled service in the next few weeks.</p>
 {% endfor %}
+{% if expired %}
+<h2 class="text-xl font-semibold" id="expired">Expired</h2>
+<ul class="list rounded-box bg-base-100 shadow-sm">
+{% for route in expired %}
+<li><a class="flex min-h-14 flex-wrap items-center gap-x-4 gap-y-1 rounded-box px-4 py-3 opacity-70 hover:bg-base-200 focus-visible:bg-base-200" href="{{ route.slug }}/">
+{{ badge(route) }}
+{% if route.name %}<span class="min-w-0 flex-1 font-semibold">{{ route.name }}</span>{% endif %}
+<span class="badge badge-sm badge-error shrink-0">Expired</span>
+<span class="basis-full text-sm text-base-content/70">{{ route.state_label }}</span>
+</a></li>
+{% endfor %}
+</ul>
+{% endif %}
 {% if maps %}
 <section class="card bg-base-100 shadow-sm">
 <div class="card-body p-4">
@@ -40,8 +51,8 @@
 {% if agency.phone %}<br><a class="link" href="tel:{{ agency.phone | replace(' ', '') }}">{{ agency.phone }}</a>{% endif %}
 </p>
 {% endfor %}
-{% if valid_through %}
-<p>Timetables valid through {{ valid_through.strftime("%B") }} {{ valid_through.day }}, {{ valid_through.year }}.</p>
+{% if valid %}
+<p>Timetables valid {{ valid }}.</p>
 {% endif %}
 {% for note in feed_notes %}
 <p>{{ note }}</p>

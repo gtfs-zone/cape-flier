@@ -132,7 +132,7 @@ def test_google_link():
 def test_rows_link_stops_to_google_maps():
     site = Site(slug="t", url="https://example.org/g.zip")
     feed = site_feed(fixture_zip("branching"), site)
-    [(_, tables)] = site_timetables(feed, site, date(2026, 10, 5))
+    [(_, tables, _, _)] = site_timetables(feed, site, date(2026, 10, 5))
     days = day_views(feed, tables, "12h")
     rows = [row for day in days for table in day.tables for row in table.rows]
     assert rows
@@ -142,7 +142,7 @@ def test_rows_link_stops_to_google_maps():
 def test_days_sorted_by_runs():
     site = Site(slug="t", url="https://example.org/g.zip")
     feed = site_feed(fixture_zip("calendar-dates-only"), site)
-    [(_, tables)] = site_timetables(feed, site, date(2026, 10, 5))
+    [(_, tables, _, _)] = site_timetables(feed, site, date(2026, 10, 5))
     views = day_views(feed, tables, "12h")
     assert [v.runs for v in views] == sorted((v.runs for v in views), reverse=True)
     assert views[0].runs == 3
@@ -169,7 +169,7 @@ def test_mode_names():
 def test_endpoints_and_first_and_last_trips():
     site = Site(slug="t", url="https://example.org/g.zip")
     feed = site_feed(fixture_zip("overnight"), site)
-    [(night_owl, tables)] = site_timetables(feed, site, date(2026, 10, 5))
+    [(night_owl, tables, _, _)] = site_timetables(feed, site, date(2026, 10, 5))
     view = route_view(night_owl, "1", tables)
     assert view.mode == "bus"
     assert view.endpoints == ("Alpha", "Charlie")
@@ -180,7 +180,7 @@ def test_endpoints_and_first_and_last_trips():
 def test_frequency_trips_last_start_before_headway_end():
     site = Site(slug="t", url="https://example.org/g.zip")
     feed = site_feed(fixture_zip("frequencies"), site)
-    [(_, tables)] = site_timetables(feed, site, date(2026, 10, 5))
+    [(_, tables, _, _)] = site_timetables(feed, site, date(2026, 10, 5))
     [day] = day_views(feed, tables, "24h")
     assert (day.first, day.last) == ("07:00", "17:40")
 
@@ -188,7 +188,7 @@ def test_frequency_trips_last_start_before_headway_end():
 def amenity_table():
     site = Site(slug="t", url="https://example.org/g.zip")
     feed = site_feed(fixture_zip("amenities"), site)
-    [(_, tables)] = site_timetables(feed, site, date(2026, 10, 5))
+    [(_, tables, _, _)] = site_timetables(feed, site, date(2026, 10, 5))
     _, marked = feed_amenities(tables)
     [day] = day_views(feed, tables, "12h", marked)
     [table] = day.tables

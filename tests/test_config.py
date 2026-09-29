@@ -17,8 +17,7 @@ REPO_CONFIG = Path(__file__).parent.parent / "sites.yaml"
 
 def test_repo_config_loads():
     config = load_config(REPO_CONFIG.read_text())
-    listed = {site.feed: site for site in config.sites}
-    assert listed["f-ff2cfa2434"].basemap == "stadia-toner-dark"
+    assert config.defaults.basemap == "stadia-toner-dark"
     assert all(site.routes == RouteFilter() for site in config.sites)
 
 

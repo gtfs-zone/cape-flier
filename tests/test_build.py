@@ -5,9 +5,19 @@ from datetime import date
 import pytest
 from conftest import fixture_files, fixture_zip, make_zip
 
-from cape_flier.build import build_root, build_site, page_digest, site_status
+from cape_flier.build import (
+    build_root,
+    build_site,
+    page_digest,
+    site_status,
+    site_timetables,
+    site_title,
+    source_label,
+)
 from cape_flier.catalog import shard_of
 from cape_flier.config import CatalogFeed, Site
+from cape_flier.gtfs.reader import read_feed
+from cape_flier.pages import date_range
 
 MONDAY = date(2026, 10, 5)
 
@@ -146,12 +156,17 @@ def test_single_mode_index_has_no_mode_headings():
     [
         ({"routes": 2, "valid_through": "2026-12-01"}, "ok", "ok"),
         ({"routes": 2, "valid_through": "2026-12-01"}, None, "ok"),
-        ({"routes": 2, "valid_through": "2026-10-10"}, "ok", "warn"),
-        ({"routes": 2, "valid_through": "2026-12-01"}, "http_error", "warn"),
-        ({"routes": 2, "valid_through": "2026-10-04"}, "ok", "bad"),
-        ({"routes": 2, "valid_through": None}, "ok", "bad"),
-        ({"routes": 0, "valid_through": "2026-12-01"}, "ok", "bad"),
-        ({}, None, "unknown"),
+        # A far-off end date is not a placeholder to drop.
+        ({"routes": 2, "valid_through": "2029-12-31"}, "ok", "ok"),
+        ({"routes": 2, "valid_through": "2026-10-10"}, "ok", "expiring"),
+        ({"routes": 2, "valid_through": "2026-12-01"}, "http_error", "stale"),
+        ({"routes": 2, "valid_through": "2026-10-04"}, "ok", "expired"),
+        ({"routes": 2, "valid_through": "2026-10-04"}, "http_error", "expired"),
+        ({"routes": 2, "valid_through": "2026-12-01"}, "parse_error", "unavailable"),
+        ({"routes": 2, "valid_through": "2026-12-01"}, "empty", "unavailable"),
+        ({"routes": 2, "valid_through": None}, "ok", "unavailable"),
+        ({"routes": 0, "valid_through": "2026-12-01"}, "ok", "unavailable"),
+        ({}, None, "unavailable"),
     ],
 )
 def test_site_status(summary, outcome, status):
@@ -162,11 +177,39 @@ def test_root_status_from_outcomes():
     summaries = [
         {"slug": "a", "title": "Alpha", "routes": 2, "valid_through": "2026-12-01"}
     ]
-    files = build_root(summaries, MONDAY, outcomes={"a": "parse_error"})
-    country = files["countries/other/index.html"].decode()
-    assert 'rounded-full bg-warning" title="Expiring soon or last update failed"' in (
-        country
+    files = build_root(
+        summaries, MONDAY, outcomes={"a": {"outcome": "http_error", "detail": "x"}}
     )
+    country = files["countries/other/index.html"].decode()
+    assert 'rounded-full bg-warning" title="Last update failed"' in country
+    assert 'href="../../a/"' in country
+
+
+def test_root_lists_unavailable_sites_last_without_a_link():
+    summaries = [
+        {"slug": "a", "title": "Alpha", "routes": 2, "valid_through": "2026-12-01"},
+        {"slug": "b", "title": "Bravo", "routes": 2, "valid_through": "2026-10-01"},
+        {"slug": "c", "title": "Charlie", "routes": 2, "valid_through": "2026-12-01"},
+        {"slug": "aa", "title": "Aardvark", "source": "example.org: g.zip"},
+    ]
+    outcomes = {
+        "c": {"outcome": "empty", "detail": ""},
+        "aa": {"outcome": "http_error", "detail": "HTTP 404"},
+    }
+    country = build_root(summaries, MONDAY, outcomes=outcomes)[
+        "countries/other/index.html"
+    ].decode()
+    assert (
+        country.index(">Alpha<")
+        < country.index(">Bravo<")
+        < country.index(">Aardvark<")
+        < country.index(">Charlie<")
+    )
+    assert 'href="../../b/"' in country and "badge-error" in country
+    assert 'href="../../aa/"' not in country and 'href="../../c/"' not in country
+    assert "Download failed: HTTP 404" in country
+    assert "Feed has no scheduled trips" in country
+    assert "example.org: g.zip" in country
 
 
 def test_only_external_links_open_in_new_tab():
@@ -220,7 +263,10 @@ def test_site_json():
     assert summary == {
         "slug": "test",
         "title": "Test & Co",
+        "source": "example.org: g.zip",
         "routes": 1,
+        "expired_routes": 0,
+        "valid_from": summary["valid_from"],
         "valid_through": summary["valid_through"],
         "generated": "2026-10-05",
         "country_code": None,
@@ -280,7 +326,7 @@ def test_a_configured_license_wins_over_the_catalog():
 def test_build_root():
     us = {"country_code": "US", "country": "United States"}
     summaries = [
-        {"slug": "b", "title": "bravo", "routes": 1, "valid_through": None}
+        {"slug": "b", "title": "bravo", "routes": 1, "valid_through": "2026-10-01"}
         | us
         | {"subdivision": "Oregon"},
         {
@@ -329,9 +375,9 @@ def test_build_root():
     country = files["countries/us/index.html"]
     assert country.index(">Maine</h2>") < country.index(">Oregon</h2>")
     assert country.index('href="../../a/"') < country.index('href="../../b/"')
-    assert "2 routes, to Dec 1" in country
+    assert "2 routes, to Dec 1, 2026" in country
     assert 'rounded-full bg-success" title="Current"' in country
-    assert 'rounded-full bg-error" title="Expired or no service"' in country
+    assert 'rounded-full bg-error" title="Expired"' in country
     assert '<link rel="stylesheet" href="../../style.css">' in country
     assert (
         '<link rel="canonical" href="https://sites.gtfs.zone/countries/us/">' in country
@@ -426,3 +472,117 @@ def test_no_icons_without_amenity_data():
     page = build("branching")["4/index.html"]
     assert "<symbol" not in page
     assert "amenities" not in page
+
+
+def test_title_falls_back_to_the_catalog_name_for_blank_agencies():
+    files = fixture_files("branching")
+    files["agency.txt"] = (
+        "agency_id,agency_name,agency_url,agency_timezone\n"
+        "a,,https://example.org,America/New_York\n"
+    )
+    feed = CatalogFeed(feedId="f-0123456789", name="Miller Transportation")
+    site = Site(slug="miller", feed=feed.feed_id, catalog=feed)
+    assert site_title(read_feed(make_zip(files)), site) == "Miller Transportation"
+
+
+def test_title_names_up_to_three_agencies():
+    files = fixture_files("branching")
+    files["agency.txt"] = (
+        "agency_id,agency_name,agency_url,agency_timezone\n"
+        + "".join(
+            f"{c},{c.upper()} Lines,https://example.org,America/New_York\n"
+            for c in "abcde"
+        )
+    )
+    files["routes.txt"] = (
+        "agency_id,route_id,route_short_name,route_long_name,route_type\n"
+        + ("".join(f"{c},R{c},{c},{c},3\n" for c in "abcde"))
+    )
+    site = Site(slug="t", url="https://example.org/g.zip")
+    assert (
+        site_title(read_feed(make_zip(files)), site)
+        == "A Lines, B Lines, C Lines and 2 others"
+    )
+
+
+@pytest.mark.parametrize(
+    ("url", "label"),
+    [
+        (
+            "https://s3.amazonaws.com/datatools-511ny/public/Gloversville.zip",
+            "s3.amazonaws.com: Gloversville.zip",
+        ),
+        (
+            "https://bct.tmix.se/gtfs/?operatorIds=21",
+            "bct.tmix.se: gtfs?operatorIds=21",
+        ),
+        ("https://example.org/", "example.org"),
+    ],
+)
+def test_source_label(url, label):
+    assert source_label(url) == label
+
+
+def test_date_range_always_has_the_year():
+    assert date_range(date(2026, 1, 2), date(2029, 12, 31)) == (
+        "Jan 2, 2026 to Dec 31, 2029"
+    )
+    assert date_range(None, date(2026, 12, 1)) == "to Dec 1, 2026"
+    assert date_range(date(2026, 1, 2), None) == "from Jan 2, 2026"
+    assert date_range(None, None) == ""
+
+
+def expired_files() -> dict[str, str]:
+    """branching, plus a route whose own service ended in the spring."""
+    files = fixture_files("branching")
+    files["calendar.txt"] += "SPRING,1,1,1,1,1,0,0,20260301,20260515\n"
+    files["routes.txt"] += "OLD,9,Old Line,3\n"
+    files["trips.txt"] += "OLD,SPRING,old1,North,0\n"
+    first_stop = files["stop_times.txt"].splitlines()[1].split(",")
+    header = files["stop_times.txt"].splitlines()[0].split(",")
+    row = dict(zip(header, first_stop, strict=True))
+    lines = []
+    for seq, (stop, time) in enumerate(
+        [(row["stop_id"], "07:00:00"), ("X", "07:30:00")]
+    ):
+        row.update(trip_id="old1", stop_id=stop, stop_sequence=str(seq + 1))
+        row.update(arrival_time=time, departure_time=time)
+        lines.append(",".join(row[h] for h in header))
+    files["stop_times.txt"] += "\n".join(lines) + "\n"
+    return files
+
+
+def test_expired_routes_keep_their_last_timetable():
+    files = expired_files()
+    stop = files["stops.txt"].splitlines()[1].split(",")
+    files["stops.txt"] += ",".join(["X", "Xray", *stop[2:]]) + "\n"
+    site = Site(slug="test", url="https://example.org/g.zip")
+    feed = read_feed(make_zip(files))
+    states = {
+        rt.route.route_id: (rt.state, rt.state_date)
+        for rt in site_timetables(feed, site, MONDAY)
+    }
+    assert states == {"R": ("", None), "OLD": ("expired", date(2026, 5, 15))}
+    out = build_site(make_zip(files), site, today=MONDAY)
+    home = out["index.html"].decode()
+    assert home.index(">Forks<") < home.index('id="expired"') < home.index(">Old Line<")
+    assert "Ended May 15, 2026" in home
+    page = out["9/index.html"].decode()
+    assert "service ended on May 15, 2026" in page and "7:00" in page
+    summary = json.loads(out["site.json"])
+    assert summary["routes"] == 2 and summary["expired_routes"] == 1
+
+
+def test_upcoming_routes_get_their_first_timetable():
+    files = expired_files()
+    files["calendar.txt"] = files["calendar.txt"].replace(
+        "SPRING,1,1,1,1,1,0,0,20260301,20260515",
+        "SPRING,1,1,1,1,1,0,0,20261201,20261231",
+    )
+    stop = files["stops.txt"].splitlines()[1].split(",")
+    files["stops.txt"] += ",".join(["X", "Xray", *stop[2:]]) + "\n"
+    site = Site(slug="test", url="https://example.org/g.zip")
+    out = build_site(make_zip(files), site, today=MONDAY)
+    home = out["index.html"].decode()
+    assert 'id="expired"' not in home and "Starts Dec 1, 2026" in home
+    assert "service starts on Dec 1, 2026" in out["9/index.html"].decode()

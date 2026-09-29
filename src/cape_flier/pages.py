@@ -14,6 +14,7 @@ from cape_flier.gtfs.service import (
     DayType,
     dates_label,
     day_order,
+    first_service_date,
     last_service_date,
     missing_label,
     trip_note,
@@ -283,6 +284,17 @@ class RouteView:
     desc: str
     mode: str = "transit"
     endpoints: tuple[str, str] | None = None
+    # "expired" (ended on state_date), "upcoming" (starts on it) or empty.
+    state: str = ""
+    state_date: date | None = None
+
+    @property
+    def state_label(self) -> str:
+        """'Ended Dec 18, 2020', 'Starts Jan 5, 2027' or empty."""
+        if self.state_date is None:
+            return ""
+        verb = {"expired": "Ended", "upcoming": "Starts"}.get(self.state, "")
+        return f"{verb} {long_date(self.state_date)}" if verb else ""
 
     @property
     def line_color(self) -> str | None:
@@ -673,7 +685,12 @@ def route_labels(feed: Feed, routes: list[Route]) -> dict[str, str]:
 
 
 def route_view(
-    route: Route, slug: str, tables: list[Timetable], label: str = ""
+    route: Route,
+    slug: str,
+    tables: list[Timetable],
+    label: str = "",
+    state: str = "",
+    state_date: date | None = None,
 ) -> RouteView:
     short, long = tidy(route.short_name), tidy(route.long_name)
     name = long if short else ""
@@ -694,6 +711,8 @@ def route_view(
         desc=tidy(route.desc),
         mode=mode_name(route.route_type),
         endpoints=endpoints(tables),
+        state=state,
+        state_date=state_date,
     )
 
 
@@ -714,16 +733,25 @@ def route_slugs(routes: list[Route], labels: dict[str, str]) -> dict[str, str]:
     return slugs
 
 
-def valid_through(feed: Feed, today: date) -> date | None:
-    """The last date the feed has service, from feed_info or the calendars;
-    None when that is over a year out, as placeholder end dates often are."""
-    end = feed_end(feed)
-    if end is None or (end - today).days > 366:
-        return None
-    return end
+def service_range(feed: Feed) -> tuple[date | None, date | None]:
+    """The feed's first and last dates, each from feed_info when set, else
+    from the calendars."""
+    info = feed.feed_info
+    start = (info and info.start) or first_service_date(feed)
+    end = (info and info.end) or last_service_date(feed)
+    return start, end
 
 
-def feed_end(feed: Feed) -> date | None:
-    if feed.feed_info and feed.feed_info.end:
-        return feed.feed_info.end
-    return last_service_date(feed)
+def long_date(day: date) -> str:
+    """'Jan 2, 2026'."""
+    return f"{day:%b} {day.day}, {day.year}"
+
+
+def date_range(start: date | None, end: date | None) -> str:
+    """'Jan 2, 2026 to Dec 31, 2029', 'from Jan 2, 2026', 'to Dec 31, 2029'
+    or empty."""
+    if start and end:
+        return f"{long_date(start)} to {long_date(end)}"
+    if start:
+        return f"from {long_date(start)}"
+    return f"to {long_date(end)}" if end else ""

@@ -2,7 +2,7 @@ import json
 from datetime import date
 
 import pytest
-from conftest import fixture_zip, make_zip
+from conftest import fixture_files, fixture_zip, make_zip
 
 from cape_flier.catalog import shard_of
 from cape_flier.config import CatalogFeed, Site
@@ -101,7 +101,12 @@ def test_publish_dates_pages_missing_from_an_old_manifest_today():
 
 def entry(slug, built):
     return {
-        "summary": {"slug": slug, "title": slug.title(), "routes": 1},
+        "summary": {
+            "slug": slug,
+            "title": slug.title(),
+            "routes": 1,
+            "valid_through": "2026-12-01",
+        },
         "built": built,
         "pages": {"index.html": built},
     }
@@ -333,6 +338,16 @@ def test_classify(error, expected):
         (b"<!DOCTYPE html><html></html>", "not_zip: html"),
         (b"", "not_zip: empty"),
         (make_zip({"agency.txt": "agency_id\n"}), "missing_files: GTFS zip is missing"),
+        (
+            make_zip(
+                fixture_files("branching")
+                | {
+                    "trips.txt": "route_id,service_id,trip_id\n",
+                    "stop_times.txt": "trip_id,stop_id,stop_sequence\n",
+                }
+            ),
+            "empty: no route has scheduled trips",
+        ),
     ],
 )
 def test_build_and_publish_raises_feed_problems(body, outcome):
@@ -386,3 +401,22 @@ def test_download_ignores_previous_for_another_url():
 
     body, _ = download(client(handler), "https://x/g.zip", previous)
     assert body == b"zip"
+
+
+def test_publish_root_lists_unbuilt_sites_from_the_catalog():
+    feed = CatalogFeed(
+        feedId="f-0123456789",
+        name="Never Built",
+        urls={"scheduled": ("https://example.org/feeds/g.zip",)},
+        country="United States",
+        country_code="US",
+        subdivision="Ohio",
+    )
+    site = Site(slug="never", feed=feed.feed_id, catalog=feed)
+    store = FakeStore()
+    contents = {"never": {"outcome": "http_error", "detail": "HTTP 404"}}
+    publish_root(store, {}, {"never"}, TODAY, contents=contents, sites=[site])
+    country = store.objects["countries/us/index.html"].decode()
+    assert "Never Built" in country and "example.org: g.zip" in country
+    assert "Download failed: HTTP 404" in country
+    assert 'href="../../never/"' not in country

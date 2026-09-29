@@ -9,10 +9,11 @@
 {% endblock %}
 {% block main %}
 {% set statuses = {
-  "ok": ("bg-success", "Current"),
-  "warn": ("bg-warning", "Expiring soon or last update failed"),
-  "bad": ("bg-error", "Expired or no service"),
-  "unknown": ("bg-base-300", "Unknown"),
+  "ok": ("bg-success", "Current", ""),
+  "expiring": ("bg-warning", "Expiring soon", "badge-warning"),
+  "stale": ("bg-warning", "Last update failed", "badge-warning"),
+  "expired": ("bg-error", "Expired", "badge-error"),
+  "unavailable": ("bg-base-300", "Unavailable", "badge-ghost"),
 } %}
 <h1 class="text-3xl font-bold">{{ country.name }}</h1>
 {% for subdivision, sites in country.subdivisions %}
@@ -21,13 +22,22 @@
 {% endif %}
 <ul class="list rounded-box bg-base-100 shadow-sm">
 {% for site in sites %}
-<li><a class="flex min-h-11 items-center gap-3 rounded-box px-4 py-2 hover:bg-base-200" href="{{ root }}{{ site.slug }}/">
 {% set status = statuses[site.status] %}
+{% set tag = "a" if site.status != "unavailable" else "div" %}
+<li><{{ tag }} class="flex min-h-11 items-center gap-3 rounded-box px-4 py-2{% if tag == "a" %} hover:bg-base-200{% else %} opacity-70{% endif %}"{% if tag == "a" %} href="{{ root }}{{ site.slug }}/"{% endif %}>
 <span class="size-3 shrink-0 rounded-full {{ status[0] }}" title="{{ status[1] }}"><span class="sr-only">{{ status[1] }}</span></span>
-<span class="flex-1">{{ site.title }}</span>
-<span class="text-sm opacity-70">{{ site.routes }} route{{ "s" if site.routes != 1 }}
-{%- if site.valid_through %}, to {{ site.valid_through.strftime("%b") }} {{ site.valid_through.day }}{% endif %}</span>
-</a></li>
+<span class="flex min-w-0 flex-1 flex-col">
+<span class="font-semibold">{{ site.title }}</span>
+{% if site.source %}<span class="break-all text-sm text-base-content/70">{{ site.source }}</span>{% endif %}
+<span class="text-sm text-base-content/70">
+{%- if site.reason %}{{ site.reason }}
+{%- else %}{{ site.routes }} route{{ "s" if site.routes != 1 }}
+{%- if site.expired_routes %} ({{ site.expired_routes }} expired){% endif %}
+{%- if site.dates %}, {{ site.dates }}{% endif %}
+{%- endif %}</span>
+</span>
+{% if status[2] %}<span class="badge badge-sm {{ status[2] }} shrink-0">{{ status[1] }}</span>{% endif %}
+</{{ tag }}></li>
 {% endfor %}
 </ul>
 {% endfor %}
