@@ -1,3 +1,13 @@
+## v0.9.0 (2026-09-29)
+
+### Feat
+
+- build whole catalog feeds, group routes and maps by mode, show feed status
+
+### Fix
+
+- **timetable**: keep time cells under the sticky stop column
+
 ## v0.8.0 (2026-09-29)
 
 ### Feat
