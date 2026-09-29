@@ -17,6 +17,7 @@
 .timetable th, .timetable td { padding: .4rem .6rem; border-bottom: 1px solid var(--color-base-300); }
 .timetable tbody tr:last-child > * { border-bottom: 0; }
 .timetable td { text-align: right; white-space: nowrap; }
+/* Sticky without a z-index: anything positioned or below full opacity in later cells paints over it */
 .timetable :is(th[scope=row], thead td:first-child, tfoot td:first-child) {
   position: sticky; left: 0;
   min-width: 8rem; max-width: 40vw;
@@ -33,9 +34,10 @@
 /* A headsign spanning shaded and unshaded columns covers the column shading */
 .timetable tr.to th:not(.alt) { background: var(--color-base-100); }
 .timetable .pm { font-weight: 700; }
-.timetable sup { font-size: .7em; line-height: 0; }
+/* Raised by vertical-align, since preflight's relative positioning would paint it over the sticky stop column */
+.timetable sup { position: static; vertical-align: .5em; font-size: .7em; line-height: 0; }
 .timetable tbody tr:hover > * { background: var(--color-base-300); }
-.timetable td.every { white-space: normal; min-width: 7rem; font-size: .85rem; opacity: .7; text-align: left; }
+.timetable td.every { white-space: normal; min-width: 7rem; font-size: .85rem; color: color-mix(in oklab, var(--color-base-content) 70%, transparent); text-align: left; }
 @media (min-width: 40rem) { .timetable th[scope=row] { max-width: 18rem; } }
 
 /* Route-colored rail down the stop column: lanes per branch, a dot per stop, filled where trips start or end */
@@ -68,7 +70,7 @@
 .timetable .dot.solid { width: 1rem; height: 1rem; background: var(--line, var(--color-base-content)); }
 /* Arrival over departure in one cell, tighter than the row spacing */
 .timetable td.dw { padding-block: .15rem; line-height: 1.15; }
-.timetable td.dw > span { display: block; font-weight: 400; opacity: .7; }
+.timetable td.dw > span { display: block; font-weight: 400; color: color-mix(in oklab, var(--color-base-content) 70%, transparent); }
 .timetable td.dw > span.pm { font-weight: 700; }
 
 /* Stroke icons from the page's sprite, sized to the text */
