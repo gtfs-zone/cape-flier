@@ -1,3 +1,9 @@
+## v0.10.0 (2026-09-29)
+
+### Feat
+
+- **root**: list every file with its source, date range and status; keep expired routes
+
 ## v0.9.0 (2026-09-29)
 
 ### Feat
