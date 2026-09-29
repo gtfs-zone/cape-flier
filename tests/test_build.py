@@ -13,6 +13,7 @@ from cape_flier.build import (
     site_timetables,
     site_title,
     source_label,
+    unavailable_reason,
 )
 from cape_flier.catalog import shard_of
 from cape_flier.config import CatalogFeed, Site
@@ -171,6 +172,20 @@ def test_single_mode_index_has_no_mode_headings():
 )
 def test_site_status(summary, outcome, status):
     assert site_status(summary, outcome, MONDAY) == status
+
+
+@pytest.mark.parametrize(
+    ("outcome", "detail", "reason"),
+    [
+        (None, "", "Not built yet"),
+        ("ok", "", "Feed has no routes"),
+        ("http_error", "HTTP 404", "Download failed: HTTP 404"),
+        ("empty", "", "Feed has no scheduled trips"),
+        ("error", "RuntimeError: x", "Build failed"),
+    ],
+)
+def test_unavailable_reason(outcome, detail, reason):
+    assert unavailable_reason(outcome, detail) == reason
 
 
 def test_root_status_from_outcomes():

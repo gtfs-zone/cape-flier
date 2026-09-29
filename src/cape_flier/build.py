@@ -400,6 +400,8 @@ def unavailable_reason(outcome: str | None, detail: str) -> str:
     """Why a site is unavailable, for its row on a country page."""
     if outcome is None:
         return "Not built yet"
+    if outcome == "ok":
+        return "Feed has no routes"
     if outcome == "http_error":
         return f"Download failed: {detail}" if detail else "Download failed"
     return REASONS.get(outcome, "Build failed")
