@@ -1,3 +1,9 @@
+## v0.11.0 (2026-09-30)
+
+### Feat
+
+- **maps**: split system maps into local and long-route maps by grid density
+
 ## v0.10.1 (2026-09-29)
 
 ### Fix
