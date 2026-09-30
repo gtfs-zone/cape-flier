@@ -20,7 +20,7 @@ from cape_flier.gtfs.service import (
     horizon_start,
     last_service_date,
 )
-from cape_flier.maps.svg import route_map, system_map
+from cape_flier.maps.svg import route_map, system_maps
 from cape_flier.pages import (
     breadcrumbs,
     date_range,
@@ -204,20 +204,28 @@ def build_site(
     }
     groups = mode_groups([view for view in routes if view.state != "expired"])
     expired = [view for view in routes if view.state == "expired"]
-    # One system map per mode, headed when there is more than one.
+    # System maps per mode, split into local and long-route maps; the first
+    # of a mode is headed by the mode, the rest by their badges too.
     home_maps = [
-        (group.heading if len(groups) > 1 else "", svg)
+        (
+            group.heading
+            + (f": {', '.join(group.routes[i].badge for i in ix)}" if n else ""),
+            svg,
+        )
         for group in (groups if maps else [])
-        for svg in [
-            system_map(
+        for n, (ix, svg) in enumerate(
+            system_maps(
                 feed,
                 f"{common['site_title']} {group.mode}",
                 [system_routes[view.slug] for view in group.routes],
                 site.basemap,
             )
-        ]
+        )
         if svg
     ]
+    # Headings only when there is more than one map.
+    if len(home_maps) == 1:
+        home_maps = [("", home_maps[0][1])]
     trail = [(ROOT_TITLE, f"{BASE_URL}/"), (common["site_title"], base_url)]
     files = {
         "index.html": render(

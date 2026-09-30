@@ -11,6 +11,7 @@ from markupsafe import Markup, escape
 
 from cape_flier.config import Basemap, TileStyle
 from cape_flier.gtfs.reader import Feed
+from cape_flier.maps.split import split_routes
 from cape_flier.pages import contrast
 from cape_flier.strip import endpoint_threshold
 from cape_flier.timetable import Timetable
@@ -583,22 +584,18 @@ def route_map(
 SystemRoute = tuple[str, str, str | None, list[Timetable], str | None]
 
 
-def system_lines(
-    feed: Feed, routes: Sequence[SystemRoute]
-) -> tuple[list[Line], list[Mark]]:
-    """Every route's line, linked to its href, and its timepoints as marks
-    listing the badges and hrefs of the routes serving them; stops on two or more
-    routes or at a route's end are major, ranked by routes served."""
-    lines = []
+def system_marks(feed: Feed, routes: Sequence[SystemRoute]) -> list[Mark]:
+    """Every route's timepoints as marks listing the badges and hrefs of the
+    routes serving them; stops on two or more routes or at a route's end are
+    major, ranked by routes served."""
     served: dict[str, list[tuple[str, str | None]]] = {}
     ends: set[str] = set()
-    for name, badge, color, tables, href in routes:
-        lines.append(route_line(feed, name, color, trip_ids(tables), href))
+    for _, badge, _, tables, href in routes:
         stops, route_ends = timepoint_stops(tables)
         for stop_id in stops:
             served.setdefault(stop_id, []).append((badge, href))
         ends |= route_ends
-    marks = [
+    return [
         m
         for stop_id, routes in served.items()
         if (
@@ -613,15 +610,42 @@ def system_lines(
             )
         )
     ]
-    return lines, marks
 
 
-def system_map(
+def system_line(feed: Feed, route: SystemRoute) -> Line:
+    name, _, color, tables, href = route
+    return route_line(feed, name, color, trip_ids(tables), href)
+
+
+def system_lines(
+    feed: Feed, routes: Sequence[SystemRoute]
+) -> tuple[list[Line], list[Mark]]:
+    """Every route's line, linked to its href, and its timepoints as marks."""
+    return [system_line(feed, r) for r in routes], system_marks(feed, routes)
+
+
+def system_maps(
     feed: Feed,
     title: str,
     routes: Sequence[SystemRoute],
     basemap: Basemap = "none",
-) -> Markup:
-    """Every route with its ends labeled and its timepoints captioned."""
-    lines, marks = system_lines(feed, routes)
-    return render_map(f"Map of {title}", lines, marks, basemap)
+) -> list[tuple[list[int], Markup]]:
+    """The routes split into local and long-route maps, each with its route
+    indexes and its map of every route with ends labeled and timepoints
+    captioned; maps after the first are titled with their badges."""
+    lines = [system_line(feed, r) for r in routes]
+    drawn = [i for i, line in enumerate(lines) if line.paths]
+    if not drawn:
+        return []
+    maps = []
+    for n, (_, ix) in enumerate(split_routes([lines[i].paths for i in drawn])):
+        ix = [drawn[i] for i in ix]
+        badges = ", ".join(routes[i][1] for i in ix)
+        svg = render_map(
+            f"Map of {title}{f': {badges}' if n else ''}",
+            [lines[i] for i in ix],
+            system_marks(feed, [routes[i] for i in ix]),
+            basemap,
+        )
+        maps.append((ix, svg))
+    return maps

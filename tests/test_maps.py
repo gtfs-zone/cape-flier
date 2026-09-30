@@ -8,6 +8,7 @@ from conftest import fixture_files, make_zip
 
 from cape_flier.build import build_site
 from cape_flier.config import BasemapPair, Site, TileStyle
+from cape_flier.maps.split import split_routes
 from cape_flier.maps.svg import (
     TILE_SOURCES,
     WIDTH,
@@ -241,3 +242,34 @@ def test_line_with_href_is_a_link():
     assert '<a href="r/" aria-label="R" data-cap="R">' in html
     assert html.count("</a>") == 1
     assert "<a " not in str(render_map("Map", [Line("R", None, path)], []))
+
+
+def km(*points: tuple[float, float]) -> tuple[tuple[tuple[float, float], ...]]:
+    """One path through (x, y) km points, as (lat, lon) near the equator."""
+    return (tuple((y / 110.57, x / 111.32) for x, y in points),)
+
+
+def test_split_routes_puts_long_routes_on_their_own_maps():
+    grid = [km((0, k), (4, k)) for k in range(5)] + [
+        km((k, 0), (k, 4)) for k in range(5)
+    ]
+    crossing = [
+        km((10, 30), (30, 30), (34, 30), (60, 50)),
+        km((30, 60), (30, 30), (34, 30), (50, 0)),
+    ]
+    alone = [km((-40, -40), (-80, -40))]
+    assert split_routes(grid + crossing + alone) == [
+        ("local", list(range(10))),
+        ("long", [10, 11]),
+        ("long", [12]),
+    ]
+
+
+def test_split_routes_keeps_scattered_routes_on_one_map():
+    routes = [km((100 * k, 0), (100 * k + 10, 0)) for k in range(5)]
+    assert split_routes(routes) == [("all", list(range(5)))]
+
+
+def test_split_routes_keeps_two_routes_on_one_map():
+    routes = [km((0, 0), (1, 0)), km((0, 0), (90, 0))]
+    assert split_routes(routes) == [("all", [0, 1])]
