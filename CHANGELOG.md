@@ -1,3 +1,13 @@
+## v0.12.0 (2026-10-01)
+
+### BREAKING CHANGE
+
+- the module is now gtfs_zone_timetable_sites
+
+### Refactor
+
+- rename the package to gtfs-zone-timetable-sites
+
 ## v0.11.1 (2026-10-01)
 
 ## v0.11.0 (2026-09-30)
