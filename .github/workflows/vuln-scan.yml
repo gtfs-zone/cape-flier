@@ -1,6 +1,6 @@
 name: Vulnerability scan
 
-# Scans pnpm-lock.yaml with osv-scanner and fails on any critical finding.
+# Scans pnpm-lock.yaml and uv.lock with osv-scanner and fails on any critical finding.
 
 on:
   push:
@@ -30,5 +30,9 @@ jobs:
           echo "${OSV_SCANNER_SHA256}  /usr/local/bin/osv-scanner" | sha256sum -c -
           chmod +x /usr/local/bin/osv-scanner
 
-      - name: Scan
+      - name: Scan pnpm-lock.yaml
         run: sh scripts/vuln-gate.sh
+
+      - name: Scan uv.lock
+        if: ${{ !cancelled() }}
+        run: sh scripts/vuln-gate.sh uv.lock
