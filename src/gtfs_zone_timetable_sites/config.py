@@ -88,10 +88,8 @@ class CatalogFeed(BaseModel):
     country: str | None = None
     country_code: str | None = None
     subdivision: str | None = None
-    municipality: str | None = None
     static_bytes: int | None = Field(None, alias="staticBytes")
     last_modified: str | None = Field(None, alias="lastModified")
-    bbox: tuple[float, float, float, float] | None = None
     # The members' license URLs and Transitland / Mobility Database pages.
     licenses: tuple[str, ...] = ()
     catalog_links: tuple[str, ...] = Field((), alias="catalogLinks")

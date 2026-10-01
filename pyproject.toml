@@ -6,6 +6,7 @@ description = "Static GTFS timetable sites for sites.gtfs.zone"
 license = "AGPL-3.0-or-later"
 dependencies = [
     "jinja2>=3.1",
+    "markupsafe>=2",
     "pydantic>=2.9",
     "pyyaml>=6.0",
 ]
@@ -14,6 +15,7 @@ dependencies = [
 # dagster pinned to feed-catalog's: this is a code location in its instance.
 pipeline = [
     "boto3>=1.35",
+    "botocore>=1.35",
     "dagster==1.13.24",
     "dagster-postgres==0.29.24",
     "httpx>=0.27",
@@ -33,8 +35,10 @@ Source = "https://github.com/gtfs-zone/gtfs-zone-timetable-sites"
 dev = [
     "commitizen",
     "dagster-webserver==1.13.24",
+    "deptry>=0.25.1",
     "pytest>=8.0",
     "ruff",
+    "vulture>=2.16",
 ]
 
 [build-system]
@@ -54,6 +58,36 @@ select = ["E", "F", "I", "UP", "B", "SIM", "ANN", "TC", "RUF"]
 [tool.ruff.lint.per-file-ignores]
 # Tests take fixtures by name and return nothing worth annotating.
 "tests/**" = ["ANN"]
+
+[tool.vulture]
+paths = ["src"]
+# Used only through a framework: routes, validators, tasks, ORM fields
+ignore_decorators = ["@app.*", "@router.*", "@field_validator", "@model_validator", "@asset"]
+ignore_names = [
+    "cls",
+    "model_config",
+    "defs",
+    # Read only by the Jinja templates
+    "days_label",
+    "dot_x",
+    "google",
+    "gutter",
+    "icons",
+    "phone",
+    "rail",
+    "show_amenities",
+    "show_headsigns",
+    "show_notes",
+    "show_numbers",
+    "solid",
+    "state_label",
+]
+
+[tool.deptry]
+per_rule_ignores.DEP002 = [
+    "dagster-postgres",  # run storage, named in the infra dagster.yaml
+    "pillow",  # the png extra, for map: png
+]
 
 [tool.commitizen]
 name = "cz_conventional_commits"

@@ -617,13 +617,6 @@ def system_line(feed: Feed, route: SystemRoute) -> Line:
     return route_line(feed, name, color, trip_ids(tables), href)
 
 
-def system_lines(
-    feed: Feed, routes: Sequence[SystemRoute]
-) -> tuple[list[Line], list[Mark]]:
-    """Every route's line, linked to its href, and its timepoints as marks."""
-    return [system_line(feed, r) for r in routes], system_marks(feed, routes)
-
-
 def system_maps(
     feed: Feed,
     title: str,

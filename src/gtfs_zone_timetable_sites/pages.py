@@ -47,10 +47,6 @@ def slugify(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
 
 
-def short_date(day: date) -> str:
-    return f"{day:%b} {day.day}"
-
-
 def luminance(color: str) -> float:
     """WCAG relative luminance of an RRGGBB color."""
     channels = []

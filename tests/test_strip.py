@@ -2,7 +2,6 @@ from gtfs_zone_timetable_sites.strip import (
     MAX_LANES,
     endpoint_threshold,
     is_endpoint,
-    is_minority,
     route_graph,
     row_paths,
     stop_stats,
@@ -72,5 +71,4 @@ def test_endpoints_and_minority_stops():
         False,
         True,
     ]
-    assert stats[2].serves == 1 and is_minority(stats[2], len(trips))
-    assert not is_minority(stats[1], len(trips))
+    assert stats[2].serves == 1

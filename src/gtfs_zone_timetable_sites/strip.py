@@ -14,22 +14,18 @@ from itertools import pairwise
 MAX_LANES = 5
 # Share of trips starting or ending at a stop to call it a terminus.
 ENDPOINT_SHARE = 0.05
-# Below this share of trips a stop gets a trip count.
-MINORITY_SHARE = 0.5
 GUTTER_BASE = 40
 LANE_WIDTH = 14
-RAIL_WIDTH = 9
 
 
 @dataclass(frozen=True, slots=True)
 class RailRow:
-    """Lanes at one row: the dot's lane, lanes passing, arriving and leaving."""
+    """Lanes at one row: the dot's lane, lanes passing, arriving and branching."""
 
     lane: int
     through: tuple[int, ...]
     merges: tuple[int, ...]
     branches: tuple[int, ...]
-    exiting: tuple[int, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,7 +139,6 @@ def route_graph(patterns: Sequence[Sequence[int]], size: int) -> RouteGraph:
                 through=tuple(through),
                 merges=tuple(merges),
                 branches=tuple(branches),
-                exiting=tuple(dict.fromkeys([*through, *branches])),
             )
         )
     return RouteGraph(rows=tuple(rows), lane_count=max(1, lane_count))
@@ -206,8 +201,3 @@ def endpoint_threshold(total_trips: int) -> float:
 
 def is_endpoint(stats: StopStats, threshold: float) -> bool:
     return stats.starts >= threshold or stats.ends >= threshold
-
-
-def is_minority(stats: StopStats, total_trips: int) -> bool:
-    share = stats.serves / total_trips if total_trips else 1
-    return share < MINORITY_SHARE
