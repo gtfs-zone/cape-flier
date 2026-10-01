@@ -1,5 +1,6 @@
 {
-  "name": "timetable-sites-styles",
+  "name": "gtfs-zone-timetable-sites",
+  "license": "AGPL-3.0-or-later",
   "private": true,
   "scripts": {
     "build:css": "tailwindcss -i src/gtfs_zone_timetable_sites/templates/input.css -o src/gtfs_zone_timetable_sites/templates/style.css --minify && sed -i 's|/\\*! 🌼 daisyUI|/*! daisyUI|' src/gtfs_zone_timetable_sites/templates/style.css",
