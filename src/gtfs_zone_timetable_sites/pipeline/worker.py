@@ -5,9 +5,9 @@ from datetime import date
 
 import httpx
 
-from cape_flier.config import USER_AGENT, Site
-from cape_flier.pipeline.bucket import Bucket, BucketSettings
-from cape_flier.pipeline.publish import build_and_publish
+from gtfs_zone_timetable_sites.config import USER_AGENT, Site
+from gtfs_zone_timetable_sites.pipeline.bucket import Bucket, BucketSettings
+from gtfs_zone_timetable_sites.pipeline.publish import build_and_publish
 
 
 def publish_one(site: Site, today: date, version: str) -> dict:

@@ -10,18 +10,18 @@ from importlib.metadata import version
 from typing import NamedTuple
 from urllib.parse import urlsplit
 
-from cape_flier.catalog import shard_of
-from cape_flier.config import RouteFilter, Site
-from cape_flier.facts import feed_facts
-from cape_flier.gtfs.reader import Agency, Feed, Route, read_feed
-from cape_flier.gtfs.service import (
+from gtfs_zone_timetable_sites.catalog import shard_of
+from gtfs_zone_timetable_sites.config import RouteFilter, Site
+from gtfs_zone_timetable_sites.facts import feed_facts
+from gtfs_zone_timetable_sites.gtfs.reader import Agency, Feed, Route, read_feed
+from gtfs_zone_timetable_sites.gtfs.service import (
     day_types,
     first_service_date,
     horizon_start,
     last_service_date,
 )
-from cape_flier.maps.svg import route_map, system_maps
-from cape_flier.pages import (
+from gtfs_zone_timetable_sites.maps.svg import route_map, system_maps
+from gtfs_zone_timetable_sites.pages import (
     breadcrumbs,
     date_range,
     day_views,
@@ -35,8 +35,8 @@ from cape_flier.pages import (
     service_range,
     tidy,
 )
-from cape_flier.render import asset, render
-from cape_flier.timetable import Timetable, route_timetables
+from gtfs_zone_timetable_sites.render import asset, render
+from gtfs_zone_timetable_sites.timetable import Timetable, route_timetables
 
 BASE_URL = "https://sites.gtfs.zone"
 LIST_URL = "https://list.gtfs.zone"
@@ -460,7 +460,7 @@ def build_root(
         "site_title": ROOT_TITLE,
         "base_url": f"{BASE_URL}/",
         "generated": today,
-        "version": version("cape-flier"),
+        "version": version("gtfs-zone-timetable-sites"),
     }
     website = {
         "@context": "https://schema.org",

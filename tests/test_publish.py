@@ -4,9 +4,9 @@ from datetime import date
 import pytest
 from conftest import fixture_files, fixture_zip, make_zip
 
-from cape_flier.catalog import shard_of
-from cape_flier.config import CatalogFeed, Site
-from cape_flier.pipeline.publish import (
+from gtfs_zone_timetable_sites.catalog import shard_of
+from gtfs_zone_timetable_sites.config import CatalogFeed, Site
+from gtfs_zone_timetable_sites.pipeline.publish import (
     FeedProblem,
     build_and_publish,
     classify,

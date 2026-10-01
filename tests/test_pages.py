@@ -2,10 +2,10 @@ from datetime import date
 
 from conftest import fixture_zip, make_zip
 
-from cape_flier.build import site_feed, site_timetables
-from cape_flier.config import Site
-from cape_flier.gtfs.reader import Route, read_feed
-from cape_flier.pages import (
+from gtfs_zone_timetable_sites.build import site_feed, site_timetables
+from gtfs_zone_timetable_sites.config import Site
+from gtfs_zone_timetable_sites.gtfs.reader import Route, read_feed
+from gtfs_zone_timetable_sites.pages import (
     ColumnHead,
     HeadsignSpan,
     badge_colors,
@@ -24,7 +24,7 @@ from cape_flier.pages import (
     slugify,
     table_title,
 )
-from cape_flier.timetable import Column, Row, Timetable
+from gtfs_zone_timetable_sites.timetable import Column, Row, Timetable
 
 
 def route(route_id="r", short="", long="", color=None, text=None) -> Route:

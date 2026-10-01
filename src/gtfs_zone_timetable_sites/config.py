@@ -26,7 +26,7 @@ TimeFormat = Literal["12h", "24h"]
 Timepoints = Literal["auto", "all", "timepoint-flag"]
 
 FEEDS_URL = "https://data.gtfs.zone/feeds.json"
-USER_AGENT = "cape-flier (+https://sites.gtfs.zone)"
+USER_AGENT = "gtfs-zone-timetable-sites (+https://sites.gtfs.zone)"
 
 SLUG_PATTERN = r"^[a-z0-9]+(-[a-z0-9]+)*$"
 FEED_PATTERN = r"^f-[0-9a-f]{10}$"
@@ -74,7 +74,7 @@ class RouteFilter(Strict):
 
 
 class CatalogFeed(BaseModel):
-    """One entry of feeds.json, as geometry-car's `artifacts.feed_entry` writes it."""
+    """One entry of feeds.json, as feed-catalog's `artifacts.feed_entry` writes it."""
 
     model_config = ConfigDict(extra="ignore", frozen=True, populate_by_name=True)
 
@@ -169,7 +169,7 @@ class Config(Strict):
     defaults: Options = Options()
     catalog: CatalogFilter | None = None
     sites: tuple[SiteEntry, ...] = ()
-    # Feed ids `cape-flier dev` builds by default.
+    # Feed ids `timetable-sites dev` builds by default.
     dev: tuple[Annotated[str, Field(pattern=FEED_PATTERN)], ...] = ()
 
     @model_validator(mode="before")

@@ -7,10 +7,10 @@ from datetime import date, datetime, time
 from itertools import groupby
 from zoneinfo import ZoneInfo
 
-from cape_flier.colors import route_color
-from cape_flier.config import TimeFormat
-from cape_flier.gtfs.reader import Feed, Route
-from cape_flier.gtfs.service import (
+from gtfs_zone_timetable_sites.colors import route_color
+from gtfs_zone_timetable_sites.config import TimeFormat
+from gtfs_zone_timetable_sites.gtfs.reader import Feed, Route
+from gtfs_zone_timetable_sites.gtfs.service import (
     DayType,
     dates_label,
     day_order,
@@ -19,7 +19,7 @@ from cape_flier.gtfs.service import (
     missing_label,
     trip_note,
 )
-from cape_flier.strip import (
+from gtfs_zone_timetable_sites.strip import (
     RailRow,
     endpoint_threshold,
     gutter_width,
@@ -29,7 +29,7 @@ from cape_flier.strip import (
     row_paths,
     stop_stats,
 )
-from cape_flier.timetable import Cell, Column, Timetable
+from gtfs_zone_timetable_sites.timetable import Cell, Column, Timetable
 
 DAY_SECONDS = 24 * 3600
 # Minimum WCAG contrast for badge text on the route color.

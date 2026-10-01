@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from cape_flier.catalog import (
+from gtfs_zone_timetable_sites.catalog import (
     SHARDS,
     assign_slugs,
     base_slug,
@@ -10,7 +10,7 @@ from cape_flier.catalog import (
     shard_of,
     slugify,
 )
-from cape_flier.config import CatalogFeed, RouteFilter, load_config
+from gtfs_zone_timetable_sites.config import CatalogFeed, RouteFilter, load_config
 
 REPO_CONFIG = Path(__file__).parent.parent / "sites.yaml"
 

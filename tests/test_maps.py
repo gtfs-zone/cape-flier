@@ -6,10 +6,10 @@ from typing import get_args
 
 from conftest import fixture_files, make_zip
 
-from cape_flier.build import build_site
-from cape_flier.config import BasemapPair, Site, TileStyle
-from cape_flier.maps.split import split_routes
-from cape_flier.maps.svg import (
+from gtfs_zone_timetable_sites.build import build_site
+from gtfs_zone_timetable_sites.config import BasemapPair, Site, TileStyle
+from gtfs_zone_timetable_sites.maps.split import split_routes
+from gtfs_zone_timetable_sites.maps.svg import (
     TILE_SOURCES,
     WIDTH,
     Line,

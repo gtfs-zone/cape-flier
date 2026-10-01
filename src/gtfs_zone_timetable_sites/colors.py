@@ -1,8 +1,8 @@
-"""Hashed route colors, a port of interlocking's `gtfs/route-colors.ts`.
+"""Hashed route colors, a port of gtfs-zone-web-common's `gtfs/route-colors.ts`.
 
 A route without a `route_color` gets a hue hashed from its `route_id`, spread
 by the golden angle and rendered through OKLCH at a fixed lightness and chroma,
-so every hashed route has the same apparent weight. Output matches interlocking
+so every hashed route has the same apparent weight. Output matches gtfs-zone-web-common
 hex for hex.
 """
 

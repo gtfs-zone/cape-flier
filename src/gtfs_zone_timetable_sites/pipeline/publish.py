@@ -1,7 +1,7 @@
 """Download a feed and publish built files to the bucket.
 
 Each site lives under `<slug>/` with a `manifest.json` written last, holding
-the build date, the cape-flier version, the feed's source headers, a hash per
+the build date, the timetable-sites version, the feed's source headers, a hash per
 file, so a rebuild uploads only what changed, and per page a digest without the
 build date and the date that digest last changed, for the sitemap.
 
@@ -12,9 +12,9 @@ feed's slug.
 
 Each shard also keeps `_content/<nn>.json`, per site the outcome of its last
 download (ok or why the feed is unusable) and, when ok, what the zip contains.
-geometry-car reads these, listed in `_content/index.json`. A feed that was
+feed-catalog reads these, listed in `_content/index.json`. A feed that was
 unusable is not downloaded again until its catalog HEAD facts or the
-cape-flier version change, or RETRY_DAYS pass.
+timetable-sites version change, or RETRY_DAYS pass.
 """
 
 import hashlib
@@ -27,7 +27,7 @@ from collections.abc import Callable
 from datetime import date
 from typing import TYPE_CHECKING, Protocol
 
-from cape_flier.build import (
+from gtfs_zone_timetable_sites.build import (
     UNUSABLE,
     EmptyFeed,
     build_root,
@@ -35,10 +35,10 @@ from cape_flier.build import (
     page_digest,
     unbuilt_summary,
 )
-from cape_flier.config import Site
-from cape_flier.facts import sniff
-from cape_flier.gtfs.reader import MissingFiles
-from cape_flier.pool import run_all
+from gtfs_zone_timetable_sites.config import Site
+from gtfs_zone_timetable_sites.facts import sniff
+from gtfs_zone_timetable_sites.gtfs.reader import MissingFiles
+from gtfs_zone_timetable_sites.pool import run_all
 
 if TYPE_CHECKING:
     import httpx

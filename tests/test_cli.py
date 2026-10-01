@@ -2,8 +2,8 @@ import json
 
 from conftest import fixture_zip
 
-from cape_flier.catalog import shard_of
-from cape_flier.cli import main
+from gtfs_zone_timetable_sites.catalog import shard_of
+from gtfs_zone_timetable_sites.cli import main
 
 
 def test_build_from_local_zip(tmp_path):

@@ -1,4 +1,4 @@
-"""geometry-car's logical feeds (data.gtfs.zone/feeds.json) to resolved sites.
+"""feed-catalog's logical feeds (data.gtfs.zone/feeds.json) to resolved sites.
 
 A site's slug is its public URL, so once assigned it is pinned in a
 {feed id: slug} map kept alongside the sites and never changed or reused.
@@ -9,7 +9,7 @@ import re
 import unicodedata
 from typing import Any
 
-from cape_flier.config import CatalogFeed, Config, Site, parse_feeds
+from gtfs_zone_timetable_sites.config import CatalogFeed, Config, Site, parse_feeds
 
 SHARDS = 16
 # Root paths a site slug may not take.
@@ -17,7 +17,7 @@ RESERVED = {"countries", "sitemaps"}
 
 
 def slugify(name: str) -> str:
-    """ASCII, lowercase, hyphenated, as geometry_car.pages.slugify."""
+    """ASCII, lowercase, hyphenated, as gtfs_zone_feed_catalog.pages.slugify."""
     ascii_name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
     slug = re.sub(r"[^a-z0-9]+", "-", ascii_name.lower()).strip("-")
     return slug[:60].rstrip("-") or "feed"

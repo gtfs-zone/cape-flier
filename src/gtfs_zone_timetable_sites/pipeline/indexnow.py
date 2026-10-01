@@ -4,7 +4,7 @@ import logging
 
 import httpx
 
-from cape_flier.build import BASE_URL
+from gtfs_zone_timetable_sites.build import BASE_URL
 
 log = logging.getLogger(__name__)
 

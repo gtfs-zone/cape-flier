@@ -4,5 +4,5 @@ useDefault = true
 [[allowlists]]
 description = "IndexNow key, public by design (served as <key>.txt)"
 condition = "AND"
-paths = ['''^src/cape_flier/pipeline/indexnow\.py$''']
+paths = ['''^src/gtfs_zone_timetable_sites/pipeline/indexnow\.py$''']
 regexes = ['''^23c63a4f9e2ddd584a4e284b82473960$''']

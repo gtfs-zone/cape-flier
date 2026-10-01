@@ -29,11 +29,11 @@ COPY sites.yaml ./
 
 ENV PATH="/app/.venv/bin:$PATH" \
     DAGSTER_HOME=/app/dagster_home \
-    CAPE_FLIER_CONFIG=/app/sites.yaml
+    TIMETABLE_SITES_CONFIG=/app/sites.yaml
 
 # DAGSTER_HOME must exist and be writable by the runtime user.
 RUN mkdir -p /app/dagster_home && chown flier:flier /app/dagster_home
 
 USER flier
 
-CMD ["dagster", "api", "grpc", "-h", "0.0.0.0", "-p", "4000", "-m", "cape_flier.pipeline.definitions"]
+CMD ["dagster", "api", "grpc", "-h", "0.0.0.0", "-p", "4000", "-m", "gtfs_zone_timetable_sites.pipeline.definitions"]

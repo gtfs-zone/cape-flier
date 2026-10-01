@@ -4,13 +4,13 @@ from functools import cache
 
 from jinja2 import Environment, PackageLoader, StrictUndefined
 
-from cape_flier.pages import long_date
+from gtfs_zone_timetable_sites.pages import long_date
 
 
 @cache
 def environment() -> Environment:
     env = Environment(
-        loader=PackageLoader("cape_flier", "templates"),
+        loader=PackageLoader("gtfs_zone_timetable_sites", "templates"),
         autoescape=True,
         undefined=StrictUndefined,
         trim_blocks=True,

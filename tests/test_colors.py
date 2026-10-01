@@ -1,8 +1,8 @@
 import pytest
 
-from cape_flier.colors import route_color
+from gtfs_zone_timetable_sites.colors import route_color
 
-# Expected values from routeColor in interlocking/src/gtfs/route-colors.ts.
+# Expected values from routeColor in gtfs-zone-web-common/src/gtfs/route-colors.ts.
 PARITY = [
     ("1", "5B87C8"),
     ("2", "BF6C57"),
@@ -19,7 +19,7 @@ PARITY = [
 
 
 @pytest.mark.parametrize(("route_id", "expected"), PARITY)
-def test_hashed_color_matches_interlocking(route_id, expected):
+def test_hashed_color_matches_web_common(route_id, expected):
     assert route_color(route_id, None) == expected
 
 

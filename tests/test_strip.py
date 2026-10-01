@@ -1,4 +1,4 @@
-from cape_flier.strip import (
+from gtfs_zone_timetable_sites.strip import (
     MAX_LANES,
     endpoint_threshold,
     is_endpoint,

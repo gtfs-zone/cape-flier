@@ -3,7 +3,7 @@ from datetime import date
 import pytest
 from conftest import fixture_zip, make_zip
 
-from cape_flier.gtfs.reader import parse_color, parse_time, read_feed
+from gtfs_zone_timetable_sites.gtfs.reader import parse_color, parse_time, read_feed
 
 
 def test_parse_time():

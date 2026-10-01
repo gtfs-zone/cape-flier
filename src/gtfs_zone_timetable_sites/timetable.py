@@ -6,9 +6,9 @@ from dataclasses import dataclass, replace
 from functools import cmp_to_key
 from itertools import pairwise
 
-from cape_flier.config import TimeFormat, Timepoints
-from cape_flier.gtfs.reader import Feed, StopTime, Trip
-from cape_flier.gtfs.service import (
+from gtfs_zone_timetable_sites.config import TimeFormat, Timepoints
+from gtfs_zone_timetable_sites.gtfs.reader import Feed, StopTime, Trip
+from gtfs_zone_timetable_sites.gtfs.service import (
     DAY_SECONDS,
     DayType,
     start_day_offset,
@@ -125,7 +125,7 @@ def merge_sequences(sequences: Sequence[Sequence[str]]) -> list[str]:
 def topo_order(
     sequences: Sequence[Sequence[str]], weights: Sequence[int]
 ) -> list[str] | None:
-    """Kahn's algorithm over consecutive-stop edges, as interlocking's
+    """Kahn's algorithm over consecutive-stop edges, as gtfs-zone-web-common's
     route-sequence; None when patterns run opposite ways (a cycle).
 
     Among ready stops, one the previous stop leads to comes first, so a

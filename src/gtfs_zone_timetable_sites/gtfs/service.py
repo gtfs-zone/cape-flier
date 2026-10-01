@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
-from cape_flier.gtfs.reader import Feed
+from gtfs_zone_timetable_sites.gtfs.reader import Feed
 
 DAY_NAMES = (
     "Monday",

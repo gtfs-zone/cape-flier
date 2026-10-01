@@ -9,12 +9,12 @@ from itertools import pairwise
 
 from markupsafe import Markup, escape
 
-from cape_flier.config import Basemap, TileStyle
-from cape_flier.gtfs.reader import Feed
-from cape_flier.maps.split import split_routes
-from cape_flier.pages import contrast
-from cape_flier.strip import endpoint_threshold
-from cape_flier.timetable import Timetable
+from gtfs_zone_timetable_sites.config import Basemap, TileStyle
+from gtfs_zone_timetable_sites.gtfs.reader import Feed
+from gtfs_zone_timetable_sites.maps.split import split_routes
+from gtfs_zone_timetable_sites.pages import contrast
+from gtfs_zone_timetable_sites.strip import endpoint_threshold
+from gtfs_zone_timetable_sites.timetable import Timetable
 
 # viewBox width; the height follows the map's shape within these ratios.
 WIDTH = 600

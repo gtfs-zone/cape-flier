@@ -1,6 +1,6 @@
-"""Rail strip for a timetable's stop column: lanes per branch, as in interlocking.
+"""Rail strip for a timetable's stop column: lanes per branch, as in web-common.
 
-Port of interlocking's `gtfs/route-graph.ts` and the stats parts of
+Port of gtfs-zone-web-common's `gtfs/route-graph.ts` and the stats parts of
 `gtfs/route-strip.ts`. Each pattern is the ascending row positions a trip
 serves; consecutive pairs are the edges. A skip with an alternate path is an
 express rejoining the line and gets no lane; one without is a branch.

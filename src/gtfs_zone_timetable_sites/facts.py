@@ -1,9 +1,9 @@
-"""What a GTFS zip contains, for the content report geometry-car reads. No I/O."""
+"""What a GTFS zip contains, for the content report feed-catalog reads. No I/O."""
 
 import hashlib
 
-from cape_flier.gtfs.reader import Feed
-from cape_flier.gtfs.service import first_service_date, last_service_date
+from gtfs_zone_timetable_sites.gtfs.reader import Feed
+from gtfs_zone_timetable_sites.gtfs.service import first_service_date, last_service_date
 
 
 def feed_facts(zip_bytes: bytes, feed: Feed, filtered: bool) -> dict:

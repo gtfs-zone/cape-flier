@@ -5,7 +5,7 @@ from datetime import date
 import pytest
 from conftest import fixture_files, fixture_zip, make_zip
 
-from cape_flier.build import (
+from gtfs_zone_timetable_sites.build import (
     build_root,
     build_site,
     page_digest,
@@ -15,10 +15,10 @@ from cape_flier.build import (
     source_label,
     unavailable_reason,
 )
-from cape_flier.catalog import shard_of
-from cape_flier.config import CatalogFeed, Site
-from cape_flier.gtfs.reader import read_feed
-from cape_flier.pages import date_range
+from gtfs_zone_timetable_sites.catalog import shard_of
+from gtfs_zone_timetable_sites.config import CatalogFeed, Site
+from gtfs_zone_timetable_sites.gtfs.reader import read_feed
+from gtfs_zone_timetable_sites.pages import date_range
 
 MONDAY = date(2026, 10, 5)
 
@@ -384,7 +384,7 @@ def test_build_root():
     assert "United States</span>" in home and "2 agencies" in home
     assert re.search(r"\.gtfs\.zone<sup[^>]*>v\d+\.\d+\.\d+</sup>", home)
     assert 'href="https://gtfs.zone" target="_blank"' in home
-    assert 'cape-flier" target="_blank" rel="noopener">cape-flier</a>' in home
+    assert 'timetable-sites" target="_blank" rel="noopener">timetable-sites</a>' in home
     assert '"@type": "WebSite"' in home
 
     country = files["countries/us/index.html"]

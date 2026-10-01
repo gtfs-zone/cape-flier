@@ -4,10 +4,10 @@ from datetime import date
 
 from conftest import fixture_files, fixture_zip, make_zip
 
-from cape_flier.build import build_site
-from cape_flier.config import RouteFilter, Site
-from cape_flier.facts import feed_facts, sniff
-from cape_flier.gtfs.reader import read_feed
+from gtfs_zone_timetable_sites.build import build_site
+from gtfs_zone_timetable_sites.config import RouteFilter, Site
+from gtfs_zone_timetable_sites.facts import feed_facts, sniff
+from gtfs_zone_timetable_sites.gtfs.reader import read_feed
 
 FEED_INFO = (
     "feed_publisher_name,feed_publisher_url,feed_version,feed_start_date,feed_end_date\n"

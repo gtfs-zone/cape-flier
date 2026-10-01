@@ -13,6 +13,6 @@ repos:
         name: build style.css
         entry: pnpm run build:css
         language: system
-        files: ^(src/cape_flier/templates/.*\.(html|css)|package\.json)$
-        exclude: ^src/cape_flier/templates/style\.css$
+        files: ^(src/gtfs_zone_timetable_sites/templates/.*\.(html|css)|package\.json)$
+        exclude: ^src/gtfs_zone_timetable_sites/templates/style\.css$
         pass_filenames: false

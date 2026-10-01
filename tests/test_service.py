@@ -2,8 +2,8 @@ from datetime import date, timedelta
 
 from conftest import fixture_zip, make_zip
 
-from cape_flier.gtfs.reader import read_feed
-from cape_flier.gtfs.service import (
+from gtfs_zone_timetable_sites.gtfs.reader import read_feed
+from gtfs_zone_timetable_sites.gtfs.service import (
     active_services,
     day_types,
     exception_name,

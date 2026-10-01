@@ -1,4 +1,4 @@
-"""cape-flier build | dump | sizes | serve | dev."""
+"""timetable-sites build | dump | sizes | serve | dev."""
 
 import argparse
 import contextlib
@@ -17,11 +17,16 @@ from datetime import date
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from cape_flier.build import build_root, build_site, site_feed, site_timetables
-from cape_flier.catalog import resolve_sites
-from cape_flier.config import FEEDS_URL, USER_AGENT, Site, load_config
-from cape_flier.pool import run_all
-from cape_flier.timetable import to_text
+from gtfs_zone_timetable_sites.build import (
+    build_root,
+    build_site,
+    site_feed,
+    site_timetables,
+)
+from gtfs_zone_timetable_sites.catalog import resolve_sites
+from gtfs_zone_timetable_sites.config import FEEDS_URL, USER_AGENT, Site, load_config
+from gtfs_zone_timetable_sites.pool import run_all
+from gtfs_zone_timetable_sites.timetable import to_text
 
 log = logging.getLogger(__name__)
 
@@ -253,7 +258,7 @@ def dev(args: argparse.Namespace) -> None:
         command = [
             sys.executable,
             "-m",
-            "cape_flier.cli",
+            "gtfs_zone_timetable_sites.cli",
             "build",
             "--out",
             str(args.dir),
@@ -286,7 +291,7 @@ def dev(args: argparse.Namespace) -> None:
 
 
 def parser() -> argparse.ArgumentParser:
-    root = argparse.ArgumentParser(prog="cape-flier")
+    root = argparse.ArgumentParser(prog="timetable-sites")
     commands = root.add_subparsers(dest="command", required=True)
 
     build_cmd = commands.add_parser("build", help="build sites and the root")

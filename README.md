@@ -1,4 +1,4 @@
-# Cape Flier
+# gtfs-zone-timetable-sites
 
 Static timetable websites generated from GTFS, served at
 [sites.gtfs.zone](https://sites.gtfs.zone). One site per agency, listed in
@@ -10,17 +10,17 @@ needed to read a timetable.
 
 ```bash
 uv sync
-uv run cape-flier dev                                   # build the dev: feeds in sites.yaml and the home page, serve, rebuild on changes
-uv run cape-flier dev --site columbia-county            # the same, one site only (faster rebuilds)
-uv run cape-flier dev --refresh                         # download the feeds again instead of using .cache/feeds/
-uv run cape-flier build                                 # clear dist/, build every site and the home page
-uv run cape-flier build --listed                        # only the sites listed in sites.yaml, not the catalog's
-uv run cape-flier build --dev                           # only the dev: feeds in sites.yaml
-uv run cape-flier build --country US --limit 50 --workers 4 --cache .cache/feeds   # a sample of catalog sites
-uv run cape-flier build --site columbia-county         # rebuild dist/columbia-county/ and the home page
-uv run cape-flier build --site columbia-county --zip feed.zip   # use a local zip
-uv run cape-flier serve                                 # serve dist/ on the LAN, port 8000
-uv run cape-flier sizes                                 # largest built pages, gzip and raw
+uv run timetable-sites dev                                   # build the dev: feeds in sites.yaml and the home page, serve, rebuild on changes
+uv run timetable-sites dev --site columbia-county            # the same, one site only (faster rebuilds)
+uv run timetable-sites dev --refresh                         # download the feeds again instead of using .cache/feeds/
+uv run timetable-sites build                                 # clear dist/, build every site and the home page
+uv run timetable-sites build --listed                        # only the sites listed in sites.yaml, not the catalog's
+uv run timetable-sites build --dev                           # only the dev: feeds in sites.yaml
+uv run timetable-sites build --country US --limit 50 --workers 4 --cache .cache/feeds   # a sample of catalog sites
+uv run timetable-sites build --site columbia-county         # rebuild dist/columbia-county/ and the home page
+uv run timetable-sites build --site columbia-county --zip feed.zip   # use a local zip
+uv run timetable-sites serve                                 # serve dist/ on the LAN, port 8000
+uv run timetable-sites sizes                                 # largest built pages, gzip and raw
 ```
 
 `build` resolves a site's `feed:` id to its download URL through
@@ -68,16 +68,16 @@ Transitland and Mobility Database pages. The license comes from `feeds.json`'s
 source for a `url:` site.
 
 Routes without a valid `route_color` get a color hashed from their `route_id`,
-the same one interlocking and coloring-book use.
+the same one gtfs-zone-web-common and gtfs-zone-editor use.
 
 ## Library
 
-`cape_flier.build.build_site(zip_bytes, site)` returns `{path: bytes}` for one
+`gtfs_zone_timetable_sites.build.build_site(zip_bytes, site)` returns `{path: bytes}` for one
 site and does no I/O, so it can run anywhere Python does.
 
 ## Pipeline
 
-`cape_flier.pipeline.definitions` is a Dagster code location with 16
+`gtfs_zone_timetable_sites.pipeline.definitions` is a Dagster code location with 16
 partitions, each a shard of the sites by slug. A daily schedule at 11:00 UTC
 runs every shard. A run resolves the sites from `sites.yaml` and feeds.json,
 then for each of its shard's sites, in worker processes: download the feed,
@@ -94,20 +94,20 @@ The content report `_content/<nn>.json`, listed in `_content/index.json`, holds
 per site the outcome of its last download (`ok`, `not_zip`, `missing_files`,
 `parse_error`, `http_error`, `timeout`, `memory` or `error`) and the day that
 outcome began. For an `ok` feed it also holds the zip's size and hash,
-feed_info, service range, agencies, counts and route types. geometry-car merges
+feed_info, service range, agencies, counts and route types. feed-catalog merges
 it into feeds.json. A feed that was `not_zip`, `missing_files` or
 `parse_error` is not downloaded again until its catalog size or Last-Modified,
-its URL or the cape-flier version changes, or a week passes.
+its URL or the timetable-sites version changes, or a week passes.
 
 ```bash
 uv sync --extra pipeline
-S3_ENDPOINT=... S3_ACCESS_KEY=... S3_SECRET_KEY=... uv run dagster dev -m cape_flier.pipeline.definitions
+S3_ENDPOINT=... S3_ACCESS_KEY=... S3_SECRET_KEY=... uv run dagster dev -m gtfs_zone_timetable_sites.pipeline.definitions
 ```
 
 Environment: `S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_BUCKET`
 (default `sites.gtfs.zone`), `S3_REGION` (default `garage`), `GATUS_URL`,
-`GATUS_TOKEN`, `CAPE_FLIER_CONFIG` (default `sites.yaml`), `CAPE_FLIER_WORKERS`
-(default 4), `CAPE_FLIER_WORKER_MEMORY` (address space per worker in bytes,
+`GATUS_TOKEN`, `TIMETABLE_SITES_CONFIG` (default `sites.yaml`), `TIMETABLE_SITES_WORKERS`
+(default 4), `TIMETABLE_SITES_WORKER_MEMORY` (address space per worker in bytes,
 default 2500000000).
 
 ## License

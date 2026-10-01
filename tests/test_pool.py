@@ -1,7 +1,7 @@
 import os
 import signal
 
-from cape_flier.pool import WorkerError, run_all
+from gtfs_zone_timetable_sites.pool import WorkerError, run_all
 
 
 def work(item):

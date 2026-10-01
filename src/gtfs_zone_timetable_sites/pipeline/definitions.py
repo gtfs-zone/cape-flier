@@ -1,5 +1,5 @@
 """Dagster entrypoint: the sites split into SHARDS partitions by slug, each
-rebuilt daily and once more whenever a new cape-flier version is deployed.
+rebuilt daily and once more whenever a new timetable-sites version is deployed.
 
 Each run resolves every site from sites.yaml and feeds.json, builds its shard's
 sites in worker processes and then rewrites the bucket root from every shard's
@@ -33,13 +33,13 @@ from dagster import (
     sensor,
 )
 
-from cape_flier.build import BASE_URL
-from cape_flier.catalog import SHARDS, resolve_sites, shard_of
-from cape_flier.config import FEEDS_URL, USER_AGENT, load_config
-from cape_flier.pipeline import indexnow
-from cape_flier.pipeline.bucket import Bucket, BucketSettings
-from cape_flier.pipeline.heartbeat import push_heartbeat
-from cape_flier.pipeline.publish import (
+from gtfs_zone_timetable_sites.build import BASE_URL
+from gtfs_zone_timetable_sites.catalog import SHARDS, resolve_sites, shard_of
+from gtfs_zone_timetable_sites.config import FEEDS_URL, USER_AGENT, load_config
+from gtfs_zone_timetable_sites.pipeline import indexnow
+from gtfs_zone_timetable_sites.pipeline.bucket import Bucket, BucketSettings
+from gtfs_zone_timetable_sites.pipeline.heartbeat import push_heartbeat
+from gtfs_zone_timetable_sites.pipeline.publish import (
     BAD,
     SLUGS,
     content_key,
@@ -50,15 +50,15 @@ from cape_flier.pipeline.publish import (
     read_json,
     run_shard,
 )
-from cape_flier.pipeline.worker import publish_one
+from gtfs_zone_timetable_sites.pipeline.worker import publish_one
 
 CONFIG = load_config(
-    Path(os.environ.get("CAPE_FLIER_CONFIG", "sites.yaml")).read_text()
+    Path(os.environ.get("TIMETABLE_SITES_CONFIG", "sites.yaml")).read_text()
 )
-VERSION = version("cape-flier")
-WORKERS = int(os.environ.get("CAPE_FLIER_WORKERS", "4"))
+VERSION = version("gtfs-zone-timetable-sites")
+WORKERS = int(os.environ.get("TIMETABLE_SITES_WORKERS", "4"))
 # Address space per worker; a feed that needs more fails alone.
-WORKER_MEMORY = int(os.environ.get("CAPE_FLIER_WORKER_MEMORY", "2500000000"))
+WORKER_MEMORY = int(os.environ.get("TIMETABLE_SITES_WORKER_MEMORY", "2500000000"))
 # The share of sites that may be behind today while still pushing the heartbeat.
 BEHIND_RATIO = 0.05
 
@@ -146,7 +146,7 @@ sites_job = define_asset_job(
 )
 
 
-# Two hours after geometry-car's 09:00 UTC catalog run, which shares the run
+# Two hours after feed-catalog's 09:00 UTC catalog run, which shares the run
 # queue and publishes the feeds.json sites are resolved from.
 @schedule(
     job=sites_job,

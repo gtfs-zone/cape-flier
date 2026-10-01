@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from cape_flier.config import (
+from gtfs_zone_timetable_sites.config import (
     BasemapPair,
     CatalogFeed,
     RouteFilter,
