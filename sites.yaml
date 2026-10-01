@@ -1,5 +1,5 @@
 defaults:
-  map: svg                 # svg | png | none
+  map: svg                 # svg | none
   horizon_days: 28         # window used to derive day types and effective dates
   time_format: 12h         # 12h | 24h
   timepoints: auto         # auto | all | timepoint-flag

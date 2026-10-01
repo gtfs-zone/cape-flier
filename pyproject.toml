@@ -20,9 +20,6 @@ pipeline = [
     "dagster-postgres==0.29.24",
     "httpx>=0.27",
 ]
-png = [
-    "pillow>=11.0",
-]
 
 [project.scripts]
 timetable-sites = "gtfs_zone_timetable_sites.cli:main"
@@ -86,7 +83,6 @@ ignore_names = [
 [tool.deptry]
 per_rule_ignores.DEP002 = [
     "dagster-postgres",  # run storage, named in the infra dagster.yaml
-    "pillow",  # the png extra, for map: png
 ]
 
 [tool.commitizen]

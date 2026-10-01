@@ -45,7 +45,7 @@ built whatever the catalog filter says:
 
 | Option | Values | Default |
 |---|---|---|
-| `map` | `svg`, `png`, `none` | `svg` |
+| `map` | `svg`, `none` | `svg` |
 | `horizon_days` | days used to derive day types | `28` |
 | `time_format` | `12h`, `24h` | `12h` |
 | `timepoints` | `auto`, `all`, `timepoint-flag` | `auto` |

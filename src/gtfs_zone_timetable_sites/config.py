@@ -5,7 +5,7 @@ from typing import Annotated, Any, Literal, Self
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-MapKind = Literal["svg", "png", "none"]
+MapKind = Literal["svg", "none"]
 TileStyle = Literal[
     "stadia-alidade-smooth",
     "stadia-alidade-smooth-dark",
