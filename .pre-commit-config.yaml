@@ -16,3 +16,10 @@ repos:
         files: ^(src/gtfs_zone_timetable_sites/templates/.*\.(html|css)|package\.json)$
         exclude: ^src/gtfs_zone_timetable_sites/templates/style\.css$
         pass_filenames: false
+        stages: [pre-commit]
+      - id: check
+        name: check
+        entry: scripts/check.sh
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]

@@ -33,7 +33,6 @@ Source = "https://github.com/gtfs-zone/gtfs-zone-timetable-sites"
 dev = [
     "commitizen",
     "dagster-webserver==1.13.24",
-    "pre-commit",
     "pytest>=8.0",
     "ruff",
 ]
