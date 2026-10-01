@@ -1,0 +1,52 @@
+publiccodeYmlVersion: "0.4"
+
+name: GTFS.zone Timetable Sites
+url: "https://github.com/gtfs-zone/gtfs-zone-timetable-sites"
+landingURL: "https://sites.gtfs.zone"
+
+platforms:
+  - web
+
+categories:
+  - website-builder
+  - data-visualization
+
+developmentStatus: beta
+
+softwareType: "standalone/web"
+
+description:
+  en:
+    shortDescription: >
+      Static timetable websites generated from GTFS feeds, one site per agency.
+    longDescription: >
+      GTFS.zone Timetable Sites turns a GTFS Schedule feed into a static
+      website for the agency that publishes it: an index of routes,
+      printed-style timetables per route, direction and service day, and a
+      simple route map. The pages are plain HTML and CSS, and no JavaScript is
+      needed to read a timetable. Sites are built for the agencies listed in
+      the repo and for feeds taken from the gtfs.zone feed catalog, and are
+      served at sites.gtfs.zone.
+    features:
+      - Printed-style timetables per route, direction and service day
+      - Route index and route map per agency
+      - Plain HTML and CSS, readable without JavaScript
+
+legal:
+  license: AGPL-3.0-or-later
+
+maintenance:
+  type: community
+  contacts:
+    - name: Max Katz-Christy
+      email: maxkatzchristy@gmail.com
+
+localisation:
+  localisationReady: false
+  availableLanguages:
+    - en
+
+businessCapabilities:
+  profile: railway
+  capabilities:
+    - inform-customer/passenger-timetable
