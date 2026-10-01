@@ -26,10 +26,9 @@ uv run cz bump                                 # bump version, update CHANGELOG.
 
 ## Releasing
 
-`uv run cz bump` on main, then push commits and tags to **both** remotes:
-`git push origin main --follow-tags && git push github main --follow-tags`. The
-`v*` tag triggers `.forgejo/workflows/build.yml`, which lints, tests, builds,
-pushes the image and commits its digest into `deploy-gtfs-rt/gtfs`. Pushes to
+`uv run cz bump` on main, then `git push origin main --follow-tags`. The `v*`
+tag triggers `.github/workflows/build.yml`, which lints, tests, builds, pushes
+the image to ghcr.io and commits its digest into `gtfs-zone-infra/gtfs`. Pushes to
 main without a tag do not deploy.
 
 ## Architecture
