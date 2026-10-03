@@ -4,6 +4,7 @@ defaults:
   time_format: 12h         # 12h | 24h
   timepoints: auto         # auto | all | timepoint-flag
   basemap: stadia-toner-dark  # none | a stadia-* style | {light: <style>, dark: <style>}
+  locale: en               # en | fr: the language of the site's pages
 
 # Feeds from data.gtfs.zone/feeds.json that become sites on their own, with a
 # slug from the feed name pinned in the bucket's slugs.json. Only feeds whose

@@ -50,6 +50,7 @@ built whatever the catalog filter says:
 | `time_format` | `12h`, `24h` | `12h` |
 | `timepoints` | `auto`, `all`, `timepoint-flag` | `auto` |
 | `basemap` | `none`, a Stadia style, or `{light: <style>, dark: <style>}` to follow the color scheme (tiles under the svg map) | `none` |
+| `locale` | `en`, `fr`: the language of the site's pages (the root and country pages stay English) | `en` |
 
 Stadia styles: `stadia-alidade-smooth`, `stadia-alidade-smooth-dark`,
 `stadia-alidade-bright`, `stadia-alidade-satellite`, `stadia-outdoors`,

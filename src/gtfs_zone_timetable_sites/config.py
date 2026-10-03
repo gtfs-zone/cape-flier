@@ -5,6 +5,8 @@ from typing import Annotated, Any, Literal, Self
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from gtfs_zone_timetable_sites.i18n import Locale
+
 MapKind = Literal["svg", "none"]
 TileStyle = Literal[
     "stadia-alidade-smooth",
@@ -52,6 +54,7 @@ class Options(Strict):
     time_format: TimeFormat = "12h"
     timepoints: Timepoints = "auto"
     basemap: Basemap = "none"
+    locale: Locale = "en"
 
 
 class RouteFilter(Strict):
